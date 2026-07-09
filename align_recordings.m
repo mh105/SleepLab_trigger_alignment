@@ -1,55 +1,69 @@
-function align_recordings(subject_code,night,trig_channel,end_seq)
+function align_recordings(subject_code, trig_channel, end_seq)
 %% Sleep and EEG Recording Alignment with Stochastic (all night) Triggers
 % Assumes that you have triggers throughout the night and 
 % Last edit by Amanda M Beck 3/25/21 - by Alex He 08/01/2022
 
 %%%%%%%%%%%%%%%% Change these parameters
 
-% subject_code='CBAN_F_56';
-% night='1';
-% trig_channel='DC7';
+subject_code='sas_023';
+trig_channel='TcPPG';
 % end_seq = true;
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-%addpath(genpath('/autofs/cifs/adsleepeeg/users/alexhe'))
-addpath('/autofs/cluster/purdonlab/code/matlab/eeg_analysis')
-addpath('/autofs/cifs/adsleepeeg/code/sleepeeg_code')
-addpath('/autofs/cifs/adsleepeeg/code/sleepeeg_code/EDF_Deidentification_updated/')
-
-%% Prepare Data
-sleep_Fs=512;
-eeg_Fs=500;
-%end_seq=logical(0);
-
-fpath = ['/autofs/cifs/adsleepeeg/archive/subject_data/' subject_code '/'];
-fn_eeg = [fpath 'set/' subject_code '_night' night '_Sleep_ds500_Z3.set']; %#ok<NASGU>
-fn_sleep = [fpath 'clinical/' subject_code '_night' night '_Sleep_clinical_deidentified.edf'];
-
-[header, signalHeader, signalCell]=SleepEEG_loadedf(fn_sleep,{trig_channel}); %Need true channel
-EEG_new=SleepEEG_loadset(subject_code,['night' night '_Sleep'],true);
-disp('HD-EEG Loaded........................................')
-
-%% Set up variables for trigger alignment using HD-EEG as gold-standard
-sleep_input.DC_trace=signalCell{1,1};
-sleep_input.Fs_ds=sleep_Fs; %we will downsample later
-eeg_input.EEG=EEG_new;
-eeg_input.Fs=eeg_Fs;
-
-[sleep_output, eeg_output, sleep_input]=record_summary(sleep_input,eeg_input, signalHeader, header);
-
-sleep_output.trig_diff=trig_distances(sleep_output.trig_index,sleep_input.Fs);
-eeg_output.trig_diff=trig_distances(eeg_output.trig_index,eeg_input.Fs);
-
-%% Load clinical system Sleep data
-desired_channels={'M1','M2','ECG-LA','ECG-RA','ECG-LL','ECG-V1','ECG-V2','E1','E2','CHIN1','CHIN2','CHIN3','LLEG+','LLEG-','RLEG+','RLEG-','Snore','PTAF','CFlow','Abdomen','Chest','XSum','SpO2','AirFlow','Airflow2','PR','IC1','IC2','Leak','Pleth','EDF Annotations'};
-num_dc=length(desired_channels);
-[header_all, signalHeader_all, signalCell_all]=SleepEEG_loadedf(fn_sleep,desired_channels);
-whole_trace=zeros((length(signalCell_all)-1),length(signalCell_all{1,1}));
-for ii=1:(length(signalCell_all)-1)
-    whole_trace(ii,:)=signalCell_all{1,ii};
+%%
+if nargin < 2
+    trig_channel = 'TcPPG';
 end
-disp('Sleep Loaded......................................')
+
+%% Path configuration
+addpath('~/Dropbox/Active_projects/EEG/code/sleepeeg_code')
+addpath('~/Dropbox/Active_projects/EEG/code/ant_interface_code')
+
+fpath = pwd;
+fn_eeg = fullfile(fpath, subject_code, 'set', [subject_code '_sleep_ds500_Z3.set']);
+fn_edf = fullfile(fpath, subject_code, 'clinical', 'HODRICK_ROBERT_(1).edf');
+
+%% Load all data
+% Load the trigger channel from EDF file
+[header, signalHeader, signalCell] = SleepEEG_loadedf(fn_edf, {trig_channel});
+trigger_Fs = signalHeader.samples_in_record ./ header.data_record_duration;
+disp('EDF trigger channel Loaded........................................')
+
+% Load the HD-EEG data so we can get the trigger events
+[filepath, filename_no_ext, ext] = fileparts(fn_eeg);
+filename = [filename_no_ext ext];
+EEG = ANT_interface_loadset(filename, filepath);
+
+% figure out scalp channel sampling rate in HD-EEG file
+eeg_Fs = EEG.srate;
+
+% assert the HD-EEG sampling rate
+assert(eeg_Fs == 500, 'EEG sampling rate is different from 500Hz.')
+disp('HD-EEG data Loaded........................................')
+
+% Load all channels from EDF file
+[header_all, signalHeader_all, signalCell_all] = SleepEEG_loadedf(fn_edf);
+
+% figure out scalp channel sampling rate in the EDF file
+c3_index = strcmp({signalHeader_all.signal_labels}, 'C3');
+edf_Fs = signalHeader_all(c3_index).samples_in_record / header_all.data_record_duration;
+
+% assert the EDF sampling rate
+assert(edf_Fs == 256, 'EDF sampling rate is different from 256Hz.')
+disp('Clinical EDF data Loaded......................................')
+
+%% Extract triggers from the two files to prepare for alignment based on intervals
+% Create two structs to hold useful variables
+edf_input.DC_trace = signalCell{1};
+edf_input.trigger_Fs = trigger_Fs;
+edf_input.Fs = edf_Fs;
+
+eeg_input.EEG = EEG;
+eeg_input.Fs = eeg_Fs;
+
+[eeg_input, edf_input] = extract_triggers(eeg_input, edf_input);
+
+%%% PICK UP HERE WITH ANGELA
 
 %% If you have a start sequence, truncate triggers
 % Notes from Alex on 07/06/2021: this section tends to require manual
@@ -120,7 +134,7 @@ end
 
 %% Check match up interval lengths
 % update the trig_diff vectors to the truncated length
-sleep_output.trig_diff=trig_distances(sleep_output.trig_index_new,sleep_input.Fs);
+sleep_output.trig_diff=trig_distances(sleep_output.trig_index_new,edf_input.Fs);
 eeg_output.trig_diff=trig_distances(eeg_output.trig_index_new,eeg_input.Fs);
 
 sleep_tdiff=sleep_output.trig_diff';
@@ -239,25 +253,25 @@ assert(abs(real_sleep_Fs - 512) < 1, 'Real sleep sampling frequency is far off!'
 disp(['Real Sleep Sampling Frequency is ' num2str(real_sleep_Fs) ' Hz']);
 
 %% Truncate HD-EEG signal 
-EEG=EEG_new;
+EEG=EEG;
 EEG=rmfield(EEG,'event');
 
 ind_new=0;
-for ii=2:length(EEG_new.event)
-    if find(match_global(:,1)==EEG_new.event(ii).latency)
+for ii=2:length(EEG.event)
+    if find(match_global(:,1)==EEG.event(ii).latency)
         ind_new=ind_new+1;
         %disp('processing')
-        EEG.event(ind_new).latency=EEG_new.event(ii).latency;
-        EEG.event(ind_new).type=EEG_new.event(ii).type;
-        EEG.event(ind_new).duration=EEG_new.event(ii).duration;
+        EEG.event(ind_new).latency=EEG.event(ii).latency;
+        EEG.event(ind_new).type=EEG.event(ii).type;
+        EEG.event(ind_new).duration=EEG.event(ii).duration;
         EEG.event(ind_new).latency=EEG.event(ind_new).latency-EEG.event(1).latency;
     end  
 end
 
-if ~isa(EEG_new.data, 'single') % this step takes a while and may be avoided
-    EEG_trunc=single(EEG_new.data); 
+if ~isa(EEG.data, 'single') % this step takes a while and may be avoided
+    EEG_trunc=single(EEG.data); 
 else
-    EEG_trunc=EEG_new.data; 
+    EEG_trunc=EEG.data; 
 end
 EEG_trunc=EEG_trunc(:,eeg_ss(1,1):eeg_ss(end,end)); %changed 4/20/21
 latency = match_global(start_index(1):start_index(end),1) - eeg_ss(1,1) +1;
@@ -268,7 +282,7 @@ EEG.event=latency;
 disp('HD-EEG Recording truncated..........................')
 
 %% Resample clinical Sleep signal
-[resamp_trace, resamp_time, sleep_trace, sleep_time] =interp_to_eeg(match_global, compare_diff2,whole_trace,EEG_new.times);
+[resamp_trace, resamp_time, sleep_trace, sleep_time] =interp_to_eeg(match_global, compare_diff2,whole_trace,EEG.times);
 
 EEG.times=resamp_time;
 EEG.times=[resamp_time resamp_time(end)+2]; % alex - why this step?
@@ -290,7 +304,7 @@ clear signalHeader_final
 %Have EEG channels at the beginning, so that we don't have to move EDF Annotations
 channel_labels={'F3','F4','C3','C4','O1','O2','M1E','M2E'};
 for ii=1:8
-    signalHeader_final(ii)=signalHeader_all(1); % use clinical lead as template 
+    signalHeader_final(ii)=signalHeader_all(1); %#ok<*AGROW> % use clinical lead as template 
     signalHeader_final(ii).signal_labels=channel_labels{ii};
     signalHeader_final(ii).samples_in_record=Fs/2; 
     
@@ -306,6 +320,11 @@ for ii=1:size(resamp_trace,1)
     signalHeader_final(ii+8)=signalHeader_all(ii);
     signalHeader_final(ii+8).samples_in_record=Fs/2;
 end
+
+% moved here from above, delete later
+desired_channels={'M1','M2','ECG-LA','ECG-RA','ECG-LL','ECG-V1','ECG-V2','E1','E2','CHIN1','CHIN2','CHIN3','LLEG+','LLEG-','RLEG+','RLEG-','Snore','PTAF','CFlow','Abdomen','Chest','XSum','SpO2','AirFlow','Airflow2','PR','IC1','IC2','Leak','Pleth','EDF Annotations'};
+num_dc=length(desired_channels);
+%%%%%%%%%
 
 % copy the signal header info for annotation channel
 anno_num = 8 + size(resamp_trace,1) + 1;
@@ -330,8 +349,8 @@ disp('Header and Signal Header constructed..........................')
 sleep_chans=zeros(8,EEG_length_new);
 
 % construct a cell array of HD-EEG labels for lead extraction
-for ii=1:length(EEG_new.chanlocs)
-    EEG_label{ii}=EEG_new.chanlocs(ii).labels; %#ok<AGROW>
+for ii=1:length(EEG.chanlocs)
+    EEG_label{ii}=EEG.chanlocs(ii).labels;
 end
 
 F_lead = extract_lead(EEG_trunc, EEG_label, 'LL2'); %F3
@@ -413,14 +432,14 @@ end
 rvsalign_store = struct;
 rvsalign_store.truncate_startidx = eeg_ss(1,1); % match_global(1,1); Alex updated on 08/01/2022
 rvsalign_store.truncate_endidx = eeg_ss(end,end); % match_global(end,1);
-rvsalign_store.original_length = size(EEG_new.data,2);
+rvsalign_store.original_length = size(EEG.data,2);
 rvsalign_store.begin_pad = length(beg_pad);
 rvsalign_store.end_pad = length(end_pad);
 structfn = ['/autofs/cifs/adsleepeeg/archive/subject_data/' subject_code '/clinical/' subject_code '_night' num2str(night) '_rvsalign.mat'];
 save(structfn, 'rvsalign_store')
 
 %update the annotation channel with custom-made annotation channel
-new_anno = SleepEEG_buildannot(fn_sleep);
+new_anno = SleepEEG_buildannot(fn_edf);
 signalCell_final{1,anno_num} = new_anno;
 
 %save a matching of EOG and clinical E1 channels to verify the quality of
