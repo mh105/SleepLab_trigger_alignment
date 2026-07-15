@@ -231,13 +231,13 @@ if plot_intervals
     plot(eeg_trig_diff_sec, '-o', 'Linewidth', 1)
     set(ax1, 'FontSize', 16)
     title('HD-EEG', 'FontSize', 24)
-    ylabel('mV')
+    ylabel('Duration (sec)')
 
     ax2 = subplot(3,1,2);
     plot(edf_trig_diff_sec, '-or', 'Linewidth', 1)
     set(ax2, 'FontSize', 16)
     title('Clinical EDF', 'FontSize', 24)
-    ylabel('mV')
+    ylabel('Duration (sec)')
 
     ax3 = subplot(3,1,3);
     hold on
@@ -246,7 +246,7 @@ if plot_intervals
     set(ax3, 'FontSize', 16)
     legend('EEG', 'EDF', 'FontSize', 20)
     title('Overlaid', 'FontSize', 24)
-    ylabel('mV')
+    ylabel('Duration (sec)')
     xlabel('Trigger difference interval index')
 
     linkaxes([ax1, ax2, ax3], 'xy')

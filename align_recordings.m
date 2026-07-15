@@ -52,7 +52,7 @@ edf_Fs = signalHeader_all(c3_index).samples_in_record / header_all.data_record_d
 assert(edf_Fs == 256, 'EDF sampling rate is different from 256Hz.')
 disp('Clinical EDF data Loaded......................................')
 
-%% Extract triggers from the two files to prepare for alignment based on intervals
+%% Extract triggers from the two files and match by trigger intervals
 % Create two structs to hold useful variables
 edf_input.DC_trace = signalCell{1};
 edf_input.trigger_Fs = trigger_Fs;
@@ -61,198 +61,17 @@ edf_input.Fs = edf_Fs;
 eeg_input.EEG = EEG;
 eeg_input.Fs = eeg_Fs;
 
+% First extract triggers from the HD-EEG events and EDF trigger channel 
 [eeg_input, edf_input] = extract_triggers(eeg_input, edf_input);
 
-%%% PICK UP HERE WITH ANGELA
+% Now match trigger intervals between the two systems
+[trigger_match_result, eeg_input, edf_input] = match_triggers(eeg_input, edf_input);
 
-%% If you have a start sequence, truncate triggers
-% Notes from Alex on 07/06/2021: this section tends to require manual
-% intervention because some triggers might get lost towards the end of a
-% session, so sometimes we need to manually select the start and end
-% trigger indices, which sometimes might not even be from the start/end
-% sequences (the 4 closely spaced triggers). Thus if issues arise in later
-% parts of the code, it is recommended to step through sections starting
-% here in order to identify the issue. Usually manual selection of trigger
-% indices can resolve most issues. 
-
-%startg for global
-[sleep_startg, sleep_startdiff] = start_sequence(sleep_output.trig_diff, sleep_output.trig_index);
-[eeg_startg, eeg_startdiff] = start_sequence(eeg_output.trig_diff,eeg_output.trig_index);
-
-%choose which start sequence %prompt user if column numbers are not 2
-[rowss, colss]=size(sleep_startdiff);
-[rowes, coles]=size(eeg_startdiff);
-if (colss~=2) || (coles~=2)
-   sleep_startdiff   %#ok<NOPRT>
-   sleep_start=input('Which is the sleep start sequence? ');
-   sleep_end=input('Which is the sleep end sequence? ');
-else
-    sleep_start=1;
-    sleep_end=2;
-end
-    
-if (colss~=2) || (coles~=2)
-    eeg_startdiff    %#ok<NOPRT>
-    eeg_start=input('Which is the eeg start sequence? '); 
-    eeg_end=input('Which is the eeg end sequence? '); 
-else
-    eeg_start=1;
-    eeg_end=2;
-end
-
-if sleep_end == 0 || eeg_end == 0
-    end_seq = false;
-end
-
-% Alex updated on 07/05/2021 - changing indexing to 3rd trigger in the 4
-% trigger sequence so that we are guaranteed to have intervals that can be
-% matched up. 
-sequence_index = 3;
-if end_seq
-    if sleep_start == 0
-        sleep_output.trig_index_new=sleep_output.trig_index(1:sleep_startdiff(sequence_index,sleep_end)); 
-    else
-        sleep_output.trig_index_new=sleep_output.trig_index(sleep_startdiff(sequence_index,sleep_start):sleep_startdiff(sequence_index,sleep_end)); 
-    end
-    if eeg_start == 0
-        eeg_output.trig_index_new=eeg_output.trig_index(1:eeg_startdiff(sequence_index,eeg_end));
-    else
-        eeg_output.trig_index_new=eeg_output.trig_index(eeg_startdiff(sequence_index,eeg_start):eeg_startdiff(sequence_index,eeg_end));
-    end
-else
-    if sleep_start == 0
-        sleep_output.trig_index_new=sleep_output.trig_index(1:end);
-    else
-        sleep_output.trig_index_new=sleep_output.trig_index(sleep_startdiff(sequence_index,sleep_start):end); 
-    end
-    if eeg_start == 0
-        eeg_output.trig_index_new=eeg_output.trig_index(1:end);
-    else
-        eeg_output.trig_index_new=eeg_output.trig_index(eeg_startdiff(sequence_index,eeg_start):end);
-    end
-end
-
-%% Check match up interval lengths
-% update the trig_diff vectors to the truncated length
-sleep_output.trig_diff=trig_distances(sleep_output.trig_index_new,edf_input.Fs);
-eeg_output.trig_diff=trig_distances(eeg_output.trig_index_new,eeg_input.Fs);
-
-sleep_tdiff=sleep_output.trig_diff';
-eeg_tdiff=eeg_output.trig_diff';
-
-compare_diff3=zeros(length(sleep_tdiff),4);
-ii=1;
-match_index=1;
-
-while (ii <= length(sleep_tdiff))
-    %disp(['round ' num2str(ii)])
-    
-    if (match_index<=length(eeg_tdiff)) && (abs(sleep_tdiff(ii)-eeg_tdiff(match_index))<0.1) %<0.0002) %use for most
-        compare_diff3(ii,:)=[eeg_tdiff(match_index) sleep_tdiff(ii) match_index ii];
-        match_index=match_index+1;
-        %disp(['match index: ' num2str(match_index)]);
-        ii=ii+1;
-    elseif match_index < length(eeg_tdiff)
-        compare_diff3(ii,:)= [ 0 sleep_tdiff(ii) 0 ii];
-        ii=ii+1; % move on to the next trigger in sleep_tdiff
-        
-        % start searching down the rest of intervals in eeg_tdiff hoping to
-        % find the right one, but we may not succeed in the case with
-        % double-bad intervals appearing one next to the other
-        match_index_keep = match_index;
-        delta=1;
-        while delta > 0.0002
-            delta_temp=abs(sleep_tdiff(ii)-eeg_tdiff(match_index));
-            
-            if delta_temp < 0.0002
-                compare_diff3(ii,:)=[eeg_tdiff(match_index) sleep_tdiff(ii) match_index ii];
-                match_index=match_index+1;
-                ii=ii+1;
-                delta=delta_temp;
-            else
-                match_index=match_index+1;
-            end
-            
-            if match_index > length(eeg_tdiff) % Alex added on 07/06/2021
-                % this means we've reached the end of eeg_tdiff without
-                % finding one, we simply quit the inner while loop and
-                % reset the match_index to what it was and let the outer
-                % while loop handle this double-bad egg case
-                delta = 0;
-                match_index = match_index_keep;
-            end    
-        end
-    else
-        ii=length(sleep_tdiff)+1; % exit the outer while loop 
-    end    
-end
-
-if end_seq
-    ind=find(compare_diff3(:,3)==match_index-1);
-    compare_diff3((ind+1):end,:)=[];
-end
-
-compare_diff2=zeros(length(eeg_tdiff),4);
-compare_diff2(:,1)=eeg_tdiff';
-compare_diff2(:,3)=[1:length(eeg_tdiff)]'; %#ok<NBRAK>
-min_length=min([length(sleep_tdiff) length(eeg_tdiff) length(compare_diff3)]);
-for ii=1:min_length
-    if compare_diff3(ii,3)~= 0 
-        eeg_ind=compare_diff3(ii,3);
-        compare_diff2(eeg_ind,4)=compare_diff3(ii,4);
-        compare_diff2(eeg_ind,2)=compare_diff3(ii,2);
-    end
-end
-
-%% Matching Indexes
-match_indexes=compare_diff2(:,3:4); 
-for ii=length(eeg_tdiff):-1:2
-    if (match_indexes(ii,2)==0) && (match_indexes(ii-1,2)~=0)
-        match_indexes(ii,2) = match_indexes(ii-1,2)+1 %#ok<NOPRT>
-    end
-end
-
-match_global=zeros(size(match_indexes));
-[rowm colm]=size(match_indexes);
-for ii=1:rowm
-    if match_indexes(ii,2)~=0
-        match_global(ii,:)=[eeg_output.trig_index_new(match_indexes(ii,1)) sleep_output.trig_index_new(match_indexes(ii,2))];
-    else
-        match_global(ii,:)=[eeg_output.trig_index_new(match_indexes(ii,1)) 0];
-    end
-end
-
-[non_zeros]=find(match_global(:,2));
-match_norm=match_global(:,2);
-match_norm(non_zeros)=1;
-match_norm=[0; match_norm; 0];
-match_diff=diff(match_norm);
-[start_index]=find(match_diff==1);
-[end_index]=find(match_diff==-1);
-sleep_ss=zeros(2,length(end_index));
-eeg_ss=zeros(2,length(end_index));
-
-sleep_ss(1,:)=match_global(start_index,2);
-sleep_ss(2,:)=match_global(end_index-1,2);
-eeg_ss(1,:)=match_global(start_index,1);
-eeg_ss(2,:)=match_global(end_index-1,1);
-
-%match_global is all matched indexes
-%match_global is missing the first trigger.
+% Extract continuous matched-up segments based on matched-up trigger intervals
+matched_segments = extract_segments(trigger_match_result, eeg_input, edf_input); %#ok<NASGU>
 disp('Triggers matched up.............................')
 
-%% Quick Check of chunks to make sure durations line up
-sleep_length=diff(sleep_ss)/(512*60);
-eeg_length=diff(eeg_ss)/(500*60);
-disp('Do the recordings line up?')
-for ii=1:length(sleep_length)
-    disp(['Chunk #:' num2str(ii) ' Sleep = ' num2str(sleep_length(ii)) ' min, EEG =' num2str(eeg_length(ii)) ' min'])
-end
-real_sleep_Fs=(diff(sleep_ss)+1)/(eeg_length*60);
-assert(abs(real_sleep_Fs - 512) < 1, 'Real sleep sampling frequency is far off!')
-disp(['Real Sleep Sampling Frequency is ' num2str(real_sleep_Fs) ' Hz']);
-
-%% Truncate HD-EEG signal 
+%% Truncate HD-EEG signal --- PICK UP HERE WITH ANGELA
 EEG=EEG;
 EEG=rmfield(EEG,'event');
 
@@ -462,17 +281,3 @@ disp('Script done.')
 close all
 
 end
-
-%% Local Functions and Notes
-%Pseudo Code
-% 1. Pick Sharp increases in DC channel as triggers
-% 2. Find time between triggers
-% 3. Mark Start/End Sequences. Delete all triggers before/after these.
-% 4. Match time between triggers. Construct times where triggers work. 
-% 5. Stretch Sleep Recording to EEG Recording Times. 
-% 6. Resample Sleep EEG so that it is at 500 Hz
-
-% function check_lengths(header, signalHeader, signalCell);
-%     for ii=1:length(signalHeader)
-%     end
-% end
