@@ -1,13 +1,12 @@
-function align_recordings(subject_code, trig_channel, end_seq)
+function align_recordings(subject_code, trig_channel)
 %% Sleep and EEG Recording Alignment with Stochastic (all night) Triggers
 % Assumes that you have triggers throughout the night and 
-% Last edit by Amanda M Beck 3/25/21 - by Alex He 08/01/2022
+% Last edit by Alex He 07/15/2026
 
 %%%%%%%%%%%%%%%% Change these parameters
 
 subject_code='sas_023';
 trig_channel='TcPPG';
-% end_seq = true;
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%
@@ -62,57 +61,29 @@ eeg_input.EEG = EEG;
 eeg_input.Fs = eeg_Fs;
 
 % First extract triggers from the HD-EEG events and EDF trigger channel 
-[eeg_input, edf_input] = extract_triggers(eeg_input, edf_input);
+[eeg_input, edf_input] = extract_triggers(eeg_input, edf_input, true);
 
 % Now match trigger intervals between the two systems
-[trigger_match_result, eeg_input, edf_input] = match_triggers(eeg_input, edf_input);
+[trigger_match_result, eeg_input, edf_input] = match_triggers(eeg_input, edf_input, true);
 
 % Extract continuous matched-up segments based on matched-up trigger intervals
-matched_segments = extract_segments(trigger_match_result, eeg_input, edf_input); %#ok<NASGU>
+matched_segments = extract_segments(trigger_match_result, eeg_input, edf_input, true);
 disp('Triggers matched up.............................')
 
-%% Truncate HD-EEG signal --- PICK UP HERE WITH ANGELA
-EEG=EEG;
-EEG=rmfield(EEG,'event');
+%% Truncate relevant HD-EEG channels to within segment sample bounds
+edf_eeg_channel_names = {'Fp1', 'Fp2', 'F3', 'F4', 'C3', 'C4', 'O1', 'O2', 'M1', 'M2'};
+eeg_input.edf_eeg_channel_names = edf_eeg_channel_names;
+eeg_segment_data = truncate_eeg_segments(matched_segments, eeg_input);
+disp('HD-EEG channels truncated..........................')
 
-ind_new=0;
-for ii=2:length(EEG.event)
-    if find(match_global(:,1)==EEG.event(ii).latency)
-        ind_new=ind_new+1;
-        %disp('processing')
-        EEG.event(ind_new).latency=EEG.event(ii).latency;
-        EEG.event(ind_new).type=EEG.event(ii).type;
-        EEG.event(ind_new).duration=EEG.event(ii).duration;
-        EEG.event(ind_new).latency=EEG.event(ind_new).latency-EEG.event(1).latency;
-    end  
-end
+%% Resample HD-EEG signal into EDF sampling rate
+% Treat the EDF clock as the reference and estimate the effective HD-EEG
+% sampling rate separately for each continuous matched segment.
+edf_input.edf_eeg_channel_names = edf_eeg_channel_names;
+resampled_eeg_segment_data = resample_eeg_segments(eeg_segment_data, matched_segments, edf_input, true); %#ok<NASGU>
+disp('HD-EEG channels resampled..........................')
 
-if ~isa(EEG.data, 'single') % this step takes a while and may be avoided
-    EEG_trunc=single(EEG.data); 
-else
-    EEG_trunc=EEG.data; 
-end
-EEG_trunc=EEG_trunc(:,eeg_ss(1,1):eeg_ss(end,end)); %changed 4/20/21
-latency = match_global(start_index(1):start_index(end),1) - eeg_ss(1,1) +1;
-
-EEG.data=EEG_trunc;
-EEG.event=latency;
-
-disp('HD-EEG Recording truncated..........................')
-
-%% Resample clinical Sleep signal
-[resamp_trace, resamp_time, sleep_trace, sleep_time] =interp_to_eeg(match_global, compare_diff2,whole_trace,EEG.times);
-
-EEG.times=resamp_time;
-EEG.times=[resamp_time resamp_time(end)+2]; % alex - why this step?
-EEG.pnts=length(EEG.times);
-% verbose = logical(1);
-EEG.xmin=EEG.times(1);
-EEG.xmax=EEG.times(end);
-
-disp('Sleep Recording resampled..........................')
-
-%% Construct header and signal header 
+%% Construct header and signal header -- PICK UP WITH ANGELA HERE
 % header 
 header_final=header_all;
 header_final.num_signals=header_all.num_signals+8; 
