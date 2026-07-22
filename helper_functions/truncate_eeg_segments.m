@@ -2,22 +2,23 @@ function eeg_segment_data = truncate_eeg_segments( ...
     matched_segments, eeg_input)
 %TRUNCATE_EEG_SEGMENTS Extract ordered HD-EEG channels for each segment.
 %   EEG_SEGMENT_DATA = TRUNCATE_EEG_SEGMENTS(MATCHED_SEGMENTS, EEG_INPUT)
-%   maps EEG_INPUT.EDF_EEG_CHANNEL_NAMES to HD-EEG channel labels and
+%   maps EEG_INPUT.ALIGNED_EEG_CHANNEL_NAMES to HD-EEG channel labels and
 %   returns one channels-by-samples array per matched segment.
 %
-%   Canonical EDF channel: Fp1 Fp2 F3  F4  C3  C4  O1   O2   M1  M2
-%   HD-EEG channel:        L1  R1  LL2 RR2 LA2 RA2 LL11 RR11 LD6 RD6
+%   Aligned channel: Fp1 Fp2 F3  F4  C3  C4  O1   O2   M1  M2  VEOGL
+%   HD-EEG channel:  L1  R1  LL2 RR2 LA2 RA2 LL11 RR11 LD6 RD6 VEOGL
 
-canonical_channel_names = {'Fp1', 'Fp2', 'F3',  'F4',  'C3',  'C4',  'O1',   'O2',   'M1',  'M2'};
-hd_eeg_channel_names =    {'L1',  'R1',  'LL2', 'RR2', 'LA2', 'RA2', 'LL11', 'RR11', 'LD6', 'RD6'};
-edf_channel_names = eeg_input.edf_eeg_channel_names;
+aligned_channel_names = {'Fp1', 'Fp2', 'F3',  'F4',  'C3',  'C4',  'O1',   'O2',   'M1',  'M2',  'VEOGL'};
+hd_eeg_channel_names  = {'L1',  'R1',  'LL2', 'RR2', 'LA2', 'RA2', 'LL11', 'RR11', 'LD6', 'RD6', 'VEOGL'};
+requested_channel_names = eeg_input.aligned_eeg_channel_names;
 
 [is_supported, mapping_index] = ismember( ...
-    edf_channel_names, canonical_channel_names);
+    requested_channel_names, aligned_channel_names);
 if ~all(is_supported)
-    unsupported_names = strjoin(edf_channel_names(~is_supported), ', ');
+    unsupported_names = strjoin( ...
+        requested_channel_names(~is_supported), ', ');
     error('truncate_eeg_segments:UnsupportedChannel', ...
-        'Unsupported canonical EDF channel(s): %s.', unsupported_names)
+        'Unsupported aligned EEG channel(s): %s.', unsupported_names)
 end
 
 requested_hd_eeg_names = hd_eeg_channel_names(mapping_index);

@@ -290,8 +290,15 @@ if plot_alignment
     plot_trigger_alignment(result, eeg_input, edf_input);
 end
 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% END OF MATCH_TRIGGERS (MAIN FUNCTION)
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 end
 
+%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% ADDITIONAL HELPER FUNCTIONS
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 function validate_canonical_cycles( ...
     eeg_canonical_cycle, edf_canonical_cycle, interval_tolerance_sec)
 %VALIDATE_CANONICAL_CYCLES Confirm that EEG and EDF cycles are equivalent.
@@ -364,6 +371,7 @@ disp('EEG and EDF canonical cycles match.')
 
 end
 
+%%
 function figure_handle = plot_trigger_alignment(result, eeg_input, edf_input)
 %PLOT_TRIGGER_ALIGNMENT Plot original, shifted, and EDF trigger timelines.
 %   FIGURE_HANDLE = PLOT_TRIGGER_ALIGNMENT(RESULT, EEG_INPUT, EDF_INPUT)
@@ -447,6 +455,7 @@ sgtitle(figure_handle, ...
 
 end
 
+%%
 function plot_initial_padding(ax_aligned, aligned_eeg_start_hr)
 
 start_tolerance_hr = 10 * eps(max(abs(aligned_eeg_start_hr), 1));
@@ -460,6 +469,7 @@ draw_interval_bars( ...
 
 end
 
+%%
 function duration_hr = recording_duration_hr(input, system)
 
 if isfield(input, 'dur_hr')
@@ -481,6 +491,7 @@ assert(isnumeric(duration_hr) && isscalar(duration_hr) && ...
 
 end
 
+%%
 function [eeg_color, edf_color, terminal_color] = ...
     trigger_chunk_colors(result, eeg_input, edf_input)
 
@@ -525,6 +536,7 @@ end
 
 end
 
+%%
 function initialize_timeline_axis(ax, start_hr, end_hr, title_text, tag)
 
 hold(ax, 'on')
@@ -549,6 +561,7 @@ ylabel(ax, 'Trigger type')
 
 end
 
+%%
 function plot_trigger_chunks(ax, time_hr, event_table, color, chunk_report)
 
 trigger_type = str2double(string(event_table.type));
@@ -580,6 +593,7 @@ end
 
 end
 
+%%
 function plot_missing_periods( ...
     missing_periods, ax_original, ax_aligned, ax_edf, ...
     eeg_shift_hr, eeg_duration_hr, edf_duration_hr, eeg_Fs, edf_Fs)
@@ -612,6 +626,7 @@ end
 
 end
 
+%%
 function time_hr = anchor_time_hr(latency, Fs, recording_duration_hr)
 
 if isnan(latency)
@@ -622,6 +637,7 @@ end
 
 end
 
+%%
 function plot_terminal_adjustment( ...
     result, ax_aligned, aligned_eeg_end_hr, edf_duration_hr, terminal_color)
 
@@ -643,6 +659,7 @@ end
 
 end
 
+%%
 function line_handle = draw_interval_bars( ...
     ax, start_hr, end_hr, color, tag)
 
@@ -667,6 +684,7 @@ line_handle = plot(ax, x, y, ...
 
 end
 
+%%
 function result = initialize_result
 
 result = struct( ...
@@ -713,6 +731,7 @@ result = struct( ...
 
 end
 
+%%
 function [result, edf_chunk_i, edf_event_table] = ...
     resolve_initial_alignment( ...
         result, eeg_event_table, eeg_Fs, eeg_chunk_report, ...
@@ -809,6 +828,7 @@ end
 
 end
 
+%%
 function [result, eeg_event_table, edf_event_table] = ...
     align_terminal_region( ...
         result, eeg_chunk_i, edf_chunk_i, ...
@@ -892,6 +912,7 @@ result.comparison_history = [result.comparison_history; ...
 
 end
 
+%%
 function prefix_count = matching_terminal_prefix_count( ...
     eeg_event_table, eeg_Fs, eeg_event_indices, ...
     edf_event_table, edf_Fs, edf_event_indices, tolerance_sec)
@@ -923,6 +944,7 @@ end
 
 end
 
+%%
 function result = record_problem( ...
     result, eeg_chunk_i, edf_chunk_i, eeg_status, edf_status, ...
     outcome, resolution_status, next_eeg_chunk_i, next_edf_chunk_i)
@@ -943,6 +965,7 @@ result.comparison_history = [result.comparison_history; ...
 
 end
 
+%%
 function history_row = make_history_row( ...
     eeg_chunk_i, edf_chunk_i, eeg_status, edf_status, ...
     outcome, resolution_status, next_eeg_chunk_i, next_edf_chunk_i)
@@ -957,6 +980,7 @@ history_row = table( ...
 
 end
 
+%%
 function history = empty_history_table
 
 history = table( ...
@@ -969,6 +993,7 @@ history = table( ...
 
 end
 
+%%
 function result = close_open_missing_periods( ...
     result, eeg_chunk_i, edf_chunk_i, ...
     eeg_event_table, eeg_Fs, eeg_chunk_report, ...
@@ -980,12 +1005,12 @@ for period_i = open_period_i'
         end_event_index = ...
             eeg_chunk_report.start_event_index(eeg_chunk_i);
         end_latency = double(eeg_event_table.latency(end_event_index));
-        end_time_sec = end_latency ./ eeg_Fs;
+        end_time_sec = (end_latency - 1) ./ eeg_Fs;
     else
         end_event_index = ...
             edf_chunk_report.start_event_index(edf_chunk_i);
         end_latency = double(edf_event_table.latency(end_event_index));
-        end_time_sec = end_latency ./ edf_Fs;
+        end_time_sec = (end_latency - 1) ./ edf_Fs;
     end
 
     result.missing_periods.end_anchor_event_index(period_i) = end_event_index;
@@ -997,6 +1022,7 @@ result.requires_relock = any( ...
 
 end
 
+%%
 function edges = extract_chunk_edges(event_table, Fs, chunk_report, chunk_i)
 
 start_event_index = chunk_report.start_event_index(chunk_i);
@@ -1026,6 +1052,7 @@ edges = table( ...
 
 end
 
+%%
 function edges = extract_canonical_edges(canonical_cycle)
 
 n_triggers = height(canonical_cycle);
@@ -1041,6 +1068,7 @@ edges = table( ...
 
 end
 
+%%
 function is_match = edges_match(first_edges, second_edges, tolerance_sec)
 
 if height(first_edges) ~= height(second_edges) || ...
@@ -1060,6 +1088,7 @@ is_match = all( ...
 
 end
 
+%%
 function [start_anchor_event_index, end_anchor_event_index, ...
     prefix_count, suffix_count] = ...
     locate_loss_anchors(observed_edges, canonical_edges, tolerance_sec)
@@ -1095,6 +1124,7 @@ end
 
 end
 
+%%
 function prefix_count = matching_prefix_count( ...
     observed_edges, canonical_edges, tolerance_sec)
 
@@ -1109,6 +1139,7 @@ end
 
 end
 
+%%
 function event_index = anchor_after_prefix(edges, prefix_count)
 
 assert(~isempty(edges), ...
@@ -1121,6 +1152,7 @@ end
 
 end
 
+%%
 function is_match = single_edge_matches( ...
     first_edges, first_i, second_edges, second_i, tolerance_sec)
 
@@ -1140,19 +1172,20 @@ is_match = types_match && interval_matches;
 
 end
 
+%%
 function missing_period = make_missing_period( ...
     system, start_event_index, end_event_index, event_table, Fs, reason, ...
     eeg_chunk_i, edf_chunk_i)
 
 start_latency = double(event_table.latency(start_event_index));
-start_time_sec = start_latency ./ Fs;
+start_time_sec = (start_latency - 1) ./ Fs;
 
 if isnan(end_event_index)
     end_latency = NaN;
     end_time_sec = NaN;
 else
     end_latency = double(event_table.latency(end_event_index));
-    end_time_sec = end_latency ./ Fs;
+    end_time_sec = (end_latency - 1) ./ Fs;
 end
 
 missing_period = table( ...
@@ -1166,6 +1199,7 @@ missing_period = table( ...
 
 end
 
+%%
 function missing_periods = empty_missing_period_table
 
 missing_periods = table( ...
@@ -1180,6 +1214,7 @@ missing_periods = table( ...
 
 end
 
+%%
 function validate_system_inputs(eeg_input, edf_input)
 
 assert(isstruct(eeg_input) && isscalar(eeg_input) && ...
@@ -1199,6 +1234,7 @@ assert(isnumeric(eeg_input.Fs) && isscalar(eeg_input.Fs) && ...
 
 end
 
+%%
 function validate_chunk_reports(eeg_chunk_report, edf_chunk_report)
 
 assert(istable(eeg_chunk_report) && istable(edf_chunk_report), ...

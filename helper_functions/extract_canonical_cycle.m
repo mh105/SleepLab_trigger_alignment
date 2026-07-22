@@ -62,11 +62,12 @@ chunk_duration_sec = nan(n_chunks, 1);
 
 for chunk_i = 1:n_chunks
     event_rows = boundary_start(chunk_i):chunk_end(chunk_i);
-    event_time_sec = latency(event_rows) ./ Fs;
+    event_time_sec = (latency(event_rows) - 1) ./ Fs;
     chunk_type{chunk_i} = trigger_type(event_rows);
 
     if chunk_i <= n_bounded_chunks
-        next_boundary_time_sec = latency(boundary_start(chunk_i + 1)) ./ Fs;
+        next_boundary_time_sec = ...
+            (latency(boundary_start(chunk_i + 1)) - 1) ./ Fs;
         chunk_interval_sec{chunk_i} = diff([event_time_sec; next_boundary_time_sec]);
         chunk_duration_sec(chunk_i) = next_boundary_time_sec - event_time_sec(1);
     else
@@ -128,7 +129,7 @@ chunk_index = (1:n_chunks)';
 start_event_index = boundary_start;
 end_event_index = chunk_end;
 start_latency = latency(boundary_start);
-start_time_sec = start_latency ./ Fs;
+start_time_sec = (start_latency - 1) ./ Fs;
 observed_trigger_count = chunk_end - boundary_start + 1;
 has_next_boundary = chunk_index <= n_bounded_chunks;
 status = strings(n_chunks, 1);
@@ -176,8 +177,15 @@ chunk_report = table( ...
     has_next_boundary, estimated_cycle_count, status, reason, ...
     max_interval_error_sec);
 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% END OF EXTRACT_CANONICAL_CYCLE (MAIN FUNCTION)
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 end
 
+%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% ADDITIONAL HELPER FUNCTIONS
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 function is_match = cycles_match( ...
     observed_type, observed_interval_sec, ...
     expected_type, expected_interval_sec, tolerance_sec)
@@ -188,6 +196,7 @@ function is_match = cycles_match( ...
 
 end
 
+%%
 function [is_match, max_error_sec, reason] = compare_cycle( ...
     observed_type, observed_interval_sec, ...
     expected_type, expected_interval_sec, tolerance_sec)

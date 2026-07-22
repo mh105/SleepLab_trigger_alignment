@@ -3,7 +3,9 @@ tests = functiontests(localfunctions);
 end
 
 function setupOnce(~)
-addpath(fileparts(fileparts(mfilename('fullpath'))))
+project_path = fileparts(fileparts(mfilename('fullpath')));
+addpath(project_path)
+addpath(fullfile(project_path, 'helper_functions'))
 end
 
 function testAllMatchedChunksFormOneSegment(testCase)
@@ -14,9 +16,11 @@ report = extract_segments(result, eeg, edf);
 
 verifyEqual(testCase, height(report), 1)
 verifyEqual(testCase, ...
-    string(report.Properties.VariableNames(1:5)), ...
+    string(report.Properties.VariableNames(1:4)), ...
     ["segment_index", "eeg_duration_sec", "edf_duration_sec", ...
-    "edf_minus_eeg_sec", "estimated_edf_trigger_Fs"])
+    "edf_minus_eeg_sec"])
+verifyFalse(testCase, ismember( ...
+    "estimated_edf_trigger_Fs", string(report.Properties.VariableNames)))
 verifyEqual(testCase, ...
     report{1, {'start_eeg_chunk', 'start_edf_chunk', 'start_interval', ...
     'end_eeg_chunk', 'end_edf_chunk', 'end_interval'}}, ...
@@ -108,6 +112,27 @@ function testSharedGlitchDoesNotRelockAnOpenLoss(testCase)
 verifyEqual(testCase, result.comparison_history.outcome, ...
     ["match"; "eeg_data_loss"; "shared_trigger_glitch"; ...
     "match"; "match"; "same_last_trigger"])
+verifyEqual(testCase, result.missing_periods.start_anchor_time_sec, 3058)
+verifyEqual(testCase, result.missing_periods.end_anchor_time_sec, 5175)
+report = extract_segments(result, eeg, edf);
+
+verifyEqual(testCase, height(report), 2)
+verifyEqual(testCase, ...
+    report{:, {'start_eeg_chunk', 'start_edf_chunk', 'start_interval', ...
+    'end_eeg_chunk', 'end_edf_chunk', 'end_interval'}}, ...
+    [1 1 1 2 2 43; 4 4 1 6 6 49])
+end
+
+function testSharedGlitchDoesNotRelockAnOpenEdfLoss(testCase)
+[eeg_keep, edf_keep] = open_loss_then_shared_glitch_keep;
+[eeg, edf] = build_pair(edf_keep, eeg_keep);
+[result, eeg, edf] = match_triggers(eeg, edf);
+
+verifyEqual(testCase, result.comparison_history.outcome, ...
+    ["match"; "edf_data_loss"; "shared_trigger_glitch"; ...
+    "match"; "match"; "same_last_trigger"])
+verifyEqual(testCase, result.missing_periods.start_anchor_time_sec, 3158)
+verifyEqual(testCase, result.missing_periods.end_anchor_time_sec, 5275)
 report = extract_segments(result, eeg, edf);
 
 verifyEqual(testCase, height(report), 2)
@@ -128,7 +153,7 @@ verifyEqual(testCase, height(report), 1)
 verifyEqual(testCase, report.end_interval, 49)
 end
 
-function testDurationAndRateUseElapsedSampleSpans(testCase)
+function testDurationsUseElapsedSampleSpans(testCase)
 [eeg, edf] = build_pair(complete_keep, complete_keep);
 edf.event_table.latency(end) = edf.event_table.latency(end) - 1;
 [result, eeg, edf] = match_triggers(eeg, edf); %#ok<ASGLU>
@@ -146,17 +171,12 @@ verifyEqual(testCase, report.edf_duration_sec, ...
     expected_edf_duration, 'AbsTol', 1e-12)
 verifyEqual(testCase, report.edf_minus_eeg_sec, ...
     expected_edf_duration - expected_eeg_duration, 'AbsTol', 1e-12)
-verifyEqual(testCase, report.estimated_edf_trigger_Fs, ...
-    edf_span ./ expected_eeg_duration, 'AbsTol', 1e-12)
-expected_rate_text = compose('%.5f', report.estimated_edf_trigger_Fs);
 expected_eeg_duration_text = compose('%.5f', report.eeg_duration_sec);
 expected_edf_duration_text = compose('%.5f', report.edf_duration_sec);
-verifyTrue(testCase, contains(string(display_text), expected_rate_text))
 verifyTrue(testCase, contains( ...
     string(display_text), expected_eeg_duration_text))
 verifyTrue(testCase, contains( ...
     string(display_text), expected_edf_duration_text))
-verifyClass(testCase, report.estimated_edf_trigger_Fs, 'double')
 verifyClass(testCase, report.eeg_duration_sec, 'double')
 verifyClass(testCase, report.edf_duration_sec, 'double')
 end

@@ -3,7 +3,9 @@ tests = functiontests(localfunctions);
 end
 
 function setupOnce(~)
-addpath(fileparts(fileparts(mfilename('fullpath'))))
+project_path = fileparts(fileparts(mfilename('fullpath')));
+addpath(project_path)
+addpath(fullfile(project_path, 'helper_functions'))
 end
 
 function testShortEegLossIsBracketed(testCase)
@@ -26,6 +28,10 @@ verifyEqual(testCase, ...
     result.missing_periods.start_anchor_latency, 935001)
 verifyEqual(testCase, ...
     result.missing_periods.end_anchor_latency, 966501)
+verifyEqual(testCase, ...
+    result.missing_periods.start_anchor_time_sec, 1870)
+verifyEqual(testCase, ...
+    result.missing_periods.end_anchor_time_sec, 1933)
 verifyEqual(testCase, ...
     result.comparison_history{:, 1:2}, ...
     [1 1; 2 2; 3 3; 4 4; 5 5])

@@ -6,7 +6,7 @@ function matched_segments = extract_segments( ...
 %   separates them at unsafe gaps, prints the resulting segment table, and
 %   returns it for later processing. Interval k means canonical interval
 %   Tk -> T(k+1); a bounded chunk's last interval reaches the next chunk.
-%   EDF durations and the estimated rate refer to the EDF trigger channel.
+%   EDF durations refer to the EDF trigger channel.
 %   Each segment's cumulative EDF-minus-EEG difference is fit against EEG
 %   elapsed time. The function errors when a fit residual exceeds the
 %   interval tolerance returned by MATCH_TRIGGERS.
@@ -118,7 +118,6 @@ edf_sample_span = edf_end_sample - edf_start_sample;
 eeg_duration_sec = eeg_sample_span ./ eeg_input.Fs;
 edf_duration_sec = edf_sample_span ./ edf_input.trigger_Fs;
 edf_minus_eeg_sec = edf_duration_sec - eeg_duration_sec;
-estimated_edf_trigger_Fs = edf_sample_span ./ eeg_duration_sec;
 
 n_segments = numel(segment_index);
 clock_drift_r_squared = zeros(n_segments, 1);
@@ -159,7 +158,6 @@ end
 matched_segments = table( ...
     segment_index, ...
     eeg_duration_sec, edf_duration_sec, edf_minus_eeg_sec, ...
-    estimated_edf_trigger_Fs, ...
     clock_drift_r_squared, clock_drift_max_abs_residual_sec, ...
     start_eeg_chunk, start_edf_chunk, start_interval, ...
     end_eeg_chunk, end_edf_chunk, end_interval, ...
@@ -170,8 +168,6 @@ display_report.eeg_duration_sec = categorical(compose( ...
     "%.5f", matched_segments.eeg_duration_sec));
 display_report.edf_duration_sec = categorical(compose( ...
     "%.5f", matched_segments.edf_duration_sec));
-display_report.estimated_edf_trigger_Fs = categorical(compose( ...
-    "%.5f", matched_segments.estimated_edf_trigger_Fs));
 display_report.clock_drift_r_squared = categorical(compose( ...
     "%.5f", matched_segments.clock_drift_r_squared));
 display_report.clock_drift_max_abs_residual_sec = categorical(compose( ...
@@ -185,8 +181,15 @@ if plot_drift
         cumulative_difference_by_segment)
 end
 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% END OF EXTRACT_SEGMENTS (MAIN FUNCTION)
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 end
 
+%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% ADDITIONAL HELPER FUNCTIONS
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 function [eeg_elapsed_sec, cumulative_difference_sec] = ...
     segment_drift_series( ...
         interval_pairs, start_row, end_row, eeg_input, edf_input)
@@ -208,6 +211,7 @@ cumulative_difference_sec = edf_elapsed_sec - eeg_elapsed_sec;
 
 end
 
+%%
 function [r_squared, max_abs_residual_sec] = ...
     fit_clock_drift(eeg_elapsed_sec, cumulative_difference_sec)
 
@@ -233,6 +237,7 @@ end
 
 end
 
+%%
 function plot_clock_drift( ...
     segment_index, eeg_elapsed_by_segment, ...
     cumulative_difference_by_segment)
@@ -258,6 +263,7 @@ grid(ax, 'on')
 
 end
 
+%%
 function [pairs, has_matching_suffix] = loss_interval_pairs( ...
     history_row, outcome, trigger_match_result, eeg_input, edf_input)
 
@@ -326,6 +332,7 @@ pairs = [pairs; suffix_pairs];
 
 end
 
+%%
 function pairs = shared_prefix_pairs( ...
     eeg_chunk_i, edf_chunk_i, trigger_match_result, eeg_input, edf_input)
 
@@ -350,6 +357,7 @@ end
 
 end
 
+%%
 function pairs = terminal_interval_pairs( ...
     trigger_match_result, eeg_input, edf_input)
 
@@ -373,6 +381,7 @@ pairs = make_interval_pairs(eeg_edges, edf_edges, interval_number);
 
 end
 
+%%
 function edges = extract_chunk_edges(system_input, chunk_i)
 
 event_table = system_input.event_table;
@@ -407,6 +416,7 @@ edges = table( ...
 
 end
 
+%%
 function edges = extract_canonical_edges(canonical_cycle)
 
 source_type = strip(string(canonical_cycle.type));
@@ -416,6 +426,7 @@ edges = table(source_type, destination_type, interval_sec);
 
 end
 
+%%
 function interval_number = infer_canonical_interval_numbers( ...
     observed_edges, canonical_edges, tolerance_sec)
 
@@ -459,6 +470,7 @@ end
 
 end
 
+%%
 function [prefix_count, suffix_count] = matching_ends( ...
     observed_edges, canonical_edges, tolerance_sec)
 
@@ -478,6 +490,7 @@ end
 
 end
 
+%%
 function prefix_count = matching_prefix_count( ...
     observed_edges, canonical_edges, tolerance_sec)
 
@@ -491,6 +504,7 @@ end
 
 end
 
+%%
 function is_match = single_edge_matches( ...
     first_edges, first_i, second_edges, second_i, tolerance_sec)
 
@@ -510,6 +524,7 @@ is_match = types_match && interval_matches;
 
 end
 
+%%
 function pairs = make_interval_pairs(eeg_edges, edf_edges, interval_number)
 
 assert(height(eeg_edges) == height(edf_edges) && ...
@@ -526,6 +541,7 @@ pairs = table( ...
 
 end
 
+%%
 function pairs = empty_interval_pair_table
 
 pairs = table( ...
@@ -538,6 +554,7 @@ pairs = table( ...
 
 end
 
+%%
 function validate_inputs(trigger_match_result, eeg_input, edf_input)
 
 assert(isstruct(trigger_match_result) && ...

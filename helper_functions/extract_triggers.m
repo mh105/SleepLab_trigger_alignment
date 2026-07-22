@@ -215,8 +215,10 @@ edf_input.trig_index = edf_input.event_table.latency;
 
 %% Extract trigger latencies and plot them
 % Compute the latencies in seconds
-eeg_trig_latency_sec = eeg_alignment_event_table.latency ./ eeg_input.Fs;
-edf_trig_latency_sec = edf_alignment_event_table.latency ./ edf_input.trigger_Fs;
+eeg_trig_latency_sec = ...
+    (eeg_alignment_event_table.latency - 1) ./ eeg_input.Fs;
+edf_trig_latency_sec = ...
+    (edf_alignment_event_table.latency - 1) ./ edf_input.trigger_Fs;
 
 eeg_trig_diff_sec = diff(eeg_trig_latency_sec);
 edf_trig_diff_sec = diff(edf_trig_latency_sec);

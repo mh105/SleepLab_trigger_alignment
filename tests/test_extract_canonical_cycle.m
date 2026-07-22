@@ -3,7 +3,9 @@ tests = functiontests(localfunctions);
 end
 
 function setupOnce(~)
-addpath(fileparts(fileparts(mfilename('fullpath'))))
+project_path = fileparts(fileparts(mfilename('fullpath')));
+addpath(project_path)
+addpath(fullfile(project_path, 'helper_functions'))
 end
 
 function testConsensusIgnoresDamagedFirstCycleAndMissingBoundary(testCase)
@@ -70,6 +72,7 @@ event_table = build_event_table( ...
 verifyEqual(testCase, repeat_count, 3)
 verifyEqual(testCase, chunk_report.status(end), "partial_end")
 verifyEqual(testCase, chunk_report.reason(end), "count_or_type")
+verifyEqual(testCase, chunk_report.start_time_sec, cycle_start_sec)
 end
 
 function testIntervalTolerance(testCase)
