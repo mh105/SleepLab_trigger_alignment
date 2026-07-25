@@ -98,14 +98,14 @@ mark_step_done(6);
 
 %% Concatenate with zero padding to the same length as the entire EDF length
 edf_input.edf_eeg_total_sample_count = numel(signalCell_all{c3_index});
-final_eeg_data = concatenate_eeg_segments(resampled_eeg_segment_data, matched_segments, edf_input);
+aligned_eeg_data = concatenate_eeg_segments(resampled_eeg_segment_data, matched_segments, edf_input);
 mark_step_done(7);
 
 %% Insert the EEG channel data into EDF file
 % Put all direct montage channels on one EDF voltage grid, then prepare the
 % 8 grounded scalp signals using the requantized clinical mastoids.
 [signalHeader_final, signalCell_final] = quantize_edf_data(signalHeader_all, signalCell_all);
-signalCell_final = substitute_eeg_data(final_eeg_data, edf_eeg_channel_names, aligned_eeg_channel_names, signalHeader_final, signalCell_final, true);
+signalCell_final = substitute_eeg_data(aligned_eeg_data, aligned_eeg_channel_names, edf_eeg_channel_names, signalHeader_final, signalCell_final, true);
 mark_step_done(8);
 
 %% Final sanity check plots
@@ -113,7 +113,7 @@ mark_step_done(8);
 sanity_check_spectrogram(EEG, header_all, signalHeader_final, signalCell_final);
 
 % b) Compare referenced HD-EEG and clinical EOG signals
-sanity_check_EOG(final_eeg_data, aligned_eeg_channel_names, signalHeader_final, signalCell_final, edf_Fs);
+sanity_check_EOG(aligned_eeg_data, aligned_eeg_channel_names, signalHeader_final, signalCell_final, edf_Fs);
 mark_step_done(9);
 
 %% Save aligned EDF file 
