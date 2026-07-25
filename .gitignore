@@ -18,4 +18,6 @@ Thumbs.db
 *.asv
 
 #large files 
-sas_023/
+sas_*/
+EDFs/
+import_template

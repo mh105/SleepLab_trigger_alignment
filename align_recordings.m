@@ -24,27 +24,12 @@ fpath = pwd;
 fn_eeg = fullfile(fpath, subject_code, 'set', [subject_code '_sleep_ds500_Z3.set']);
 fn_edf = fullfile(fpath, subject_code, 'clinical', 'HODRICK_ROBERT_(1).edf');
 
-progress_steps = { ...
-    'EDF trigger channel loaded'; ...
-    'HD-EEG data loaded'; ...
-    'Clinical EDF data loaded'; ...
-    'Triggers extracted and matched'; ...
-    'HD-EEG channels truncated'; ...
-    'HD-EEG channels resampled'; ...
-    'Aligned segments concatenated and padded'; ...
-    'Aligned EEG substituted into EDF'; ...
-    'Final sanity checks completed'; ...
-    'Aligned EDF saved'};
+progress_steps = {'EDF trigger channel loaded'; 'HD-EEG data loaded'; 'Clinical EDF data loaded'; 'Triggers extracted and matched'; 'HD-EEG channels truncated'; 'HD-EEG channels resampled'; 'Aligned segments concatenated and padded'; 'Direct EDF montage signals prepared'; 'Final sanity checks completed'; 'Aligned EDF saved'};
 progress_step_count = numel(progress_steps);
-mark_step_done = @(step_i) fprintf( ...
-    '  [%s%s] %2d/%d  [done] %s\n', ...
-    repmat('=', 1, step_i), ...
-    repmat('-', 1, progress_step_count - step_i), ...
-    step_i, progress_step_count, progress_steps{step_i});
+mark_step_done = @(step_i) fprintf('  [%s%s] %2d/%d  [done] %s\n', repmat('=', 1, step_i), repmat('-', 1, progress_step_count - step_i), step_i, progress_step_count, progress_steps{step_i});
 
 fprintf('\nAlignment checklist\n')
-fprintf('  [%s] %2d/%d  [ ] Ready\n', ...
-    repmat('-', 1, progress_step_count), 0, progress_step_count)
+fprintf('  [%s] %2d/%d  [ ] Ready\n', repmat('-', 1, progress_step_count), 0, progress_step_count)
 
 %% Load all data
 % Load the trigger channel from EDF file
@@ -95,9 +80,11 @@ matched_segments = extract_segments(trigger_match_result, eeg_input, edf_input, 
 mark_step_done(4);
 
 %% Truncate relevant HD-EEG channels to within segment sample bounds
-edf_eeg_channel_names = {'Fp1', 'Fp2', 'F3', 'F4', 'C3', 'C4', 'O1', 'O2', 'M1', 'M2'};
-% VEOGL follows the same alignment path but is not substituted into the EDF.
-aligned_eeg_channel_names = [edf_eeg_channel_names, {'VEOGL'}];
+edf_eeg_channel_names = {'Fp1', 'Fp2', 'F3', 'F4', 'C3', 'C4', 'O1', 'O2'};
+% HD-EEG M1/M2 are retained only as reference sources. Clinical E1, E2,
+% M1, and M2 retain their recorded signals but are requantized below.
+% VEOGL is retained for QA.
+aligned_eeg_channel_names = [edf_eeg_channel_names, {'M1', 'M2', 'VEOGL'}];
 eeg_input.aligned_eeg_channel_names = aligned_eeg_channel_names;
 eeg_segment_data = truncate_eeg_segments(matched_segments, eeg_input);
 mark_step_done(5);
@@ -115,21 +102,23 @@ final_eeg_data = concatenate_eeg_segments(resampled_eeg_segment_data, matched_se
 mark_step_done(7);
 
 %% Insert the EEG channel data into EDF file
-% Substitute the 10 EDF EEG channels and retain VEOGL for the EOG check.
-signalCell_final = substitute_eeg_data(final_eeg_data, edf_eeg_channel_names, aligned_eeg_channel_names, signalHeader_all, signalCell_all);
+% Put all direct montage channels on one EDF voltage grid, then prepare the
+% 8 grounded scalp signals using the requantized clinical mastoids.
+[signalHeader_final, signalCell_final] = quantize_edf_data(signalHeader_all, signalCell_all);
+signalCell_final = substitute_eeg_data(final_eeg_data, edf_eeg_channel_names, aligned_eeg_channel_names, signalHeader_final, signalCell_final, true);
 mark_step_done(8);
 
 %% Final sanity check plots
-% a) Compare native and aligned 'C3:M2' spectrograms
-sanity_check_spectrogram(EEG, header_all, signalHeader_all, signalCell_final);
+% a) Compare native C3:M2 with C3:M2 reconstructed from grounded EDF rows
+sanity_check_spectrogram(EEG, header_all, signalHeader_final, signalCell_final);
 
 % b) Compare referenced HD-EEG and clinical EOG signals
-sanity_check_EOG(final_eeg_data, aligned_eeg_channel_names, signalHeader_all, signalCell_final, edf_Fs);
+sanity_check_EOG(final_eeg_data, aligned_eeg_channel_names, signalHeader_final, signalCell_final, edf_Fs);
 mark_step_done(9);
 
 %% Save aligned EDF file 
 edfFN = strrep(fn_edf, '.edf', '_aligned.edf');
-blockEdfWrite(edfFN, header_all, signalHeader_all, signalCell_final);
+blockEdfWrite(edfFN, header_all, signalHeader_final, signalCell_final);
 mark_step_done(10);
 fprintf('\nAlignment complete.\n')
 

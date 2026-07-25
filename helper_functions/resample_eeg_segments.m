@@ -12,7 +12,8 @@ function resampled_eeg_segment_data = resample_eeg_segments( ...
 %   RESAMPLE_EEG_SEGMENTS(..., PLOT_SANITY_CHECK) creates a 5-by-2 trace
 %   comparison using the middle 30 seconds of the first 10 minutes, plus a
 %   Welch-spectrum figure for each matched segment. These plots include
-%   only the 10 EDF scalp and mastoid channels, not auxiliary VEOGL data.
+%   the eight scalp and two HD-EEG mastoid sources, not auxiliary VEOGL
+%   data.
 
 if nargin < 4
     plot_sanity_check = false;
