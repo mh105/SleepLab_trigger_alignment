@@ -1,0 +1,23 @@
+.DS_Store
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+build/
+dist/
+release/
+*.app/
+*.exe
+*.zip
+
+# Clinical data, linkage tables, and diagnostic output must not be committed.
+*.[Ee][Dd][Ff]
+*.csv
+*.tsv
+*.log
+reports/

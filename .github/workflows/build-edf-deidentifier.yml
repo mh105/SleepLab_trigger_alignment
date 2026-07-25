@@ -1,0 +1,115 @@
+name: Build EDF Deidentifier
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ${{ matrix.label }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: Windows x64
+            runner: windows-2025
+            python_arch: x64
+            platform: windows
+            archive: EDF-Deidentifier-Windows-x64.zip
+          - label: macOS Apple Silicon
+            runner: macos-15
+            python_arch: arm64
+            platform: macos
+            expected_machine: arm64
+            archive: EDF-Deidentifier-macOS-arm64.zip
+          - label: macOS Intel
+            runner: macos-15-intel
+            python_arch: x64
+            platform: macos
+            expected_machine: x86_64
+            archive: EDF-Deidentifier-macOS-Intel.zip
+
+    defaults:
+      run:
+        working-directory: EDF_deidentifier
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          architecture: ${{ matrix.python_arch }}
+          cache: pip
+          cache-dependency-path: EDF_deidentifier/pyproject.toml
+
+      - name: Install test and build dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install ".[test,build]"
+
+      - name: Run synthetic tests
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python -m pytest
+
+      - name: Build one-folder GUI bundle
+        run: python -m PyInstaller --noconfirm --clean edf_deidentifier.spec
+
+      - name: Verify and archive Windows x64 bundle
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          if ([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture -ne "X64") {
+            throw "The Windows build did not run on x64."
+          }
+          $executable = "dist\EDF Deidentifier\EDF Deidentifier.exe"
+          if (-not (Test-Path -Path $executable -PathType Leaf)) {
+            throw "Expected executable not found: $executable"
+          }
+          $stage = "release\EDF-Deidentifier-Windows-x64"
+          New-Item -ItemType Directory -Force -Path $stage | Out-Null
+          Copy-Item -Recurse -Path "dist\EDF Deidentifier\*" -Destination $stage
+          Copy-Item -Path "THIRD_PARTY_NOTICES.md" -Destination $stage -Force
+          Compress-Archive -Path $stage -DestinationPath "release\${{ matrix.archive }}"
+
+      - name: Verify and archive macOS bundle
+        if: matrix.platform == 'macos'
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = "${{ matrix.expected_machine }}"
+          executable="dist/EDF Deidentifier.app/Contents/MacOS/EDF Deidentifier"
+          test -x "$executable"
+          file "$executable" | grep -q "${{ matrix.expected_machine }}"
+          stage="release/EDF-Deidentifier-${{ matrix.expected_machine }}"
+          mkdir -p "$stage"
+          ditto --norsrc \
+            "dist/EDF Deidentifier.app" "$stage/EDF Deidentifier.app"
+          xattr -cr "$stage/EDF Deidentifier.app"
+          codesign --verify --deep --strict "$stage/EDF Deidentifier.app"
+          cp "THIRD_PARTY_NOTICES.md" "$stage/"
+          ditto -c -k --norsrc --keepParent \
+            "$stage" "release/${{ matrix.archive }}"
+          if zipinfo -1 "release/${{ matrix.archive }}" \
+            | grep -Eq '(^__MACOSX/|(^|/)\._)'; then
+            echo "Archive contains forbidden AppleDouble metadata." >&2
+            exit 1
+          fi
+          audit_dir="$(mktemp -d)"
+          ditto -x -k "release/${{ matrix.archive }}" "$audit_dir"
+          audit_app="$audit_dir/$(basename "$stage")/EDF Deidentifier.app"
+          codesign --verify --deep --strict "$audit_app"
+
+      - name: Upload packaged ZIP
+        uses: actions/upload-artifact@v7
+        with:
+          path: EDF_deidentifier/release/${{ matrix.archive }}
+          archive: false
+          if-no-files-found: error
