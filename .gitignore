@@ -16,8 +16,3 @@ Thumbs.db
 #file copies 
 ._*
 *.asv
-
-#large files 
-sas_*/
-EDFs/
-import_template
