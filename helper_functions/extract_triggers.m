@@ -12,14 +12,21 @@ EEG = eeg_input.EEG;
 
 event_idx = (1:numel(EEG.event))';
 latency = [EEG.event.latency]';
-event_type = arrayfun(@(ev) string(ev.type), EEG.event)';
-event_type = strip(event_type);
+raw_event_text = arrayfun(@(ev) string(ev.type), EEG.event)';
+event_type = strip(raw_event_text);
+event_code = strip(extractBefore(event_type + ",", ","));
 
 is_impedance = contains(lower(event_type), "impedance");
 is_boundary = strcmpi(event_type, "boundary");
+is_amplifier_disconnect = event_code == "9001";
+is_amplifier_reconnect = event_code == "9002";
+is_amplifier_event = is_amplifier_disconnect | is_amplifier_reconnect;
+
+% Keep amplifier markers out of the canonical trigger stream, but preserve
+% their raw text and trigger anchors in a sidecar for matching and auditing.
 
 % Remove the initial validation sequence: 1, 2, 4, 8, 16, 32, 64
-candidate_idx = find(~is_impedance & ~is_boundary);
+candidate_idx = find(~is_impedance & ~is_boundary & ~is_amplifier_event);
 validation_pattern = ["1"; "2"; "4"; "8"; "16"; "32"; "64"];
 
 assert(numel(candidate_idx) >= numel(validation_pattern), ...
@@ -32,11 +39,13 @@ assert(isequal(event_type(validation_idx), validation_pattern), ...
 is_validation = false(size(event_type));
 is_validation(validation_idx) = true;
 
-use_alignment = ~(is_impedance | is_boundary | is_validation);
+use_alignment = ~( ...
+    is_impedance | is_boundary | is_validation | is_amplifier_event);
 
 % After filtering, alignment triggers should only be 63 or 64
 unexpected_types = setdiff(unique(event_type(use_alignment)), ["63"; "64"]);
 assert(isempty(unexpected_types), ...
+    'extract_triggers:UnexpectedEEGEventType', ...
     'Unexpected EEG event type(s) remain after filtering.')
 
 eeg_alignment_event_table = table( ...
@@ -44,6 +53,11 @@ eeg_alignment_event_table = table( ...
     latency(use_alignment), ...
     event_type(use_alignment), ...
     'VariableNames', {'event_idx', 'latency', 'type'});
+
+amplifier_interruptions = build_amplifier_interruptions( ...
+    event_idx, latency, raw_event_text, ...
+    is_amplifier_disconnect, is_amplifier_reconnect, ...
+    eeg_alignment_event_table);
 
 % Sanity check: remaining 64 triggers should occur in runs of exactly 4
 is64 = eeg_alignment_event_table.type == "64";
@@ -58,6 +72,15 @@ assert(all(run_lengths == 4), ...
 % store the event table and trigger index in samples
 eeg_input.event_table = eeg_alignment_event_table;
 eeg_input.trig_index = eeg_input.event_table.latency;
+eeg_input.amplifier_interruptions = amplifier_interruptions;
+
+if ~isempty(amplifier_interruptions)
+    disp('HD-EEG amplifier interruptions:')
+    disp(amplifier_interruptions(:, { ...
+        'interruption_id', 'pairing_status', ...
+        'disconnect_raw_event_index', 'reconnect_raw_event_index', ...
+        'eeg_start_anchor_event_index', 'eeg_end_anchor_event_index'}))
+end
 
 %% build trigger table from EDF trigger channel
 zero_tolerance = 1;
@@ -253,5 +276,134 @@ if plot_intervals
 
     linkaxes([ax1, ax2, ax3], 'xy')
 end
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% END OF EXTRACT_TRIGGERS (MAIN FUNCTION)
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+end
+
+%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% ADDITIONAL HELPER FUNCTIONS
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+function interruptions = build_amplifier_interruptions( ...
+    event_idx, latency, raw_event_text, ...
+    is_disconnect, is_reconnect, alignment_event_table)
+
+marker_rows = find(is_disconnect | is_reconnect);
+n_interruptions = sum(is_disconnect);
+interruptions = empty_amplifier_interruption_table(n_interruptions);
+
+open_disconnect_row = NaN;
+interruption_i = 0;
+for marker_row = marker_rows'
+    if is_disconnect(marker_row)
+        if isfinite(open_disconnect_row)
+            error('extract_triggers:MalformedAmplifierSequence', ...
+                ['An amplifier disconnect occurred before the preceding ' ...
+                 'disconnect was reconnected.'])
+        end
+        open_disconnect_row = marker_row;
+        continue
+    end
+
+    if ~isfinite(open_disconnect_row)
+        error('extract_triggers:MalformedAmplifierSequence', ...
+            'An amplifier reconnect occurred without an open disconnect.')
+    end
+    if latency(marker_row) < latency(open_disconnect_row)
+        error('extract_triggers:MalformedAmplifierSequence', ...
+            'An amplifier reconnect precedes its disconnect latency.')
+    end
+
+    interruption_i = interruption_i + 1;
+    interruptions = set_interruption_row( ...
+        interruptions, interruption_i, "paired", ...
+        open_disconnect_row, marker_row, event_idx, latency, ...
+        raw_event_text, alignment_event_table);
+    open_disconnect_row = NaN;
+end
+
+if isfinite(open_disconnect_row)
+    interruption_i = interruption_i + 1;
+    interruptions = set_interruption_row( ...
+        interruptions, interruption_i, "missing_reconnect", ...
+        open_disconnect_row, NaN, event_idx, latency, ...
+        raw_event_text, alignment_event_table);
+end
+
+assert(interruption_i == n_interruptions, ...
+    'Every amplifier disconnect must create one interruption row.')
+
+end
+
+
+%%
+function interruptions = set_interruption_row( ...
+    interruptions, interruption_i, pairing_status, ...
+    disconnect_row, reconnect_row, event_idx, latency, ...
+    raw_event_text, alignment_event_table)
+
+disconnect_latency = double(latency(disconnect_row));
+interruptions.interruption_id(interruption_i) = interruption_i;
+interruptions.pairing_status(interruption_i) = pairing_status;
+interruptions.disconnect_raw_event_index(interruption_i) = ...
+    event_idx(disconnect_row);
+interruptions.disconnect_latency(interruption_i) = disconnect_latency;
+interruptions.disconnect_event_text(interruption_i) = ...
+    raw_event_text(disconnect_row);
+
+if isfinite(reconnect_row)
+    reconnect_latency = double(latency(reconnect_row));
+    interruptions.reconnect_raw_event_index(interruption_i) = ...
+        event_idx(reconnect_row);
+    interruptions.reconnect_latency(interruption_i) = reconnect_latency;
+    interruptions.reconnect_event_text(interruption_i) = ...
+        raw_event_text(reconnect_row);
+else
+    reconnect_latency = NaN;
+end
+
+trigger_latency = double(alignment_event_table.latency);
+start_anchor = find( ...
+    trigger_latency <= disconnect_latency, 1, 'last');
+if ~isempty(start_anchor)
+    interruptions.eeg_start_anchor_event_index(interruption_i) = ...
+        start_anchor;
+    interruptions.eeg_start_anchor_latency(interruption_i) = ...
+        trigger_latency(start_anchor);
+end
+
+if isfinite(reconnect_latency)
+    end_anchor = find( ...
+        trigger_latency >= reconnect_latency, 1, 'first');
+    if ~isempty(end_anchor)
+        interruptions.eeg_end_anchor_event_index(interruption_i) = ...
+            end_anchor;
+        interruptions.eeg_end_anchor_latency(interruption_i) = ...
+            trigger_latency(end_anchor);
+    end
+end
+
+end
+
+
+%%
+function interruptions = empty_amplifier_interruption_table(n_rows)
+
+interruptions = table( ...
+    zeros(n_rows, 1), strings(n_rows, 1), ...
+    nan(n_rows, 1), nan(n_rows, 1), strings(n_rows, 1), ...
+    nan(n_rows, 1), nan(n_rows, 1), strings(n_rows, 1), ...
+    nan(n_rows, 1), nan(n_rows, 1), ...
+    nan(n_rows, 1), nan(n_rows, 1), ...
+    'VariableNames', { ...
+        'interruption_id', 'pairing_status', ...
+        'disconnect_raw_event_index', 'disconnect_latency', ...
+        'disconnect_event_text', ...
+        'reconnect_raw_event_index', 'reconnect_latency', ...
+        'reconnect_event_text', ...
+        'eeg_start_anchor_event_index', 'eeg_start_anchor_latency', ...
+        'eeg_end_anchor_event_index', 'eeg_end_anchor_latency'});
 
 end

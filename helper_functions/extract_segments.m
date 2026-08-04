@@ -6,6 +6,8 @@ function matched_segments = extract_segments( ...
 %   separates them at unsafe gaps, prints the resulting segment table, and
 %   returns it for later processing. Interval k means canonical interval
 %   Tk -> T(k+1); a bounded chunk's last interval reaches the next chunk.
+%   Amplifier-interruption intervals flagged by MATCH_TRIGGERS are omitted
+%   explicitly, including marked multi-interval spans whose timing matches.
 %   EDF durations refer to the EDF trigger channel.
 %   Each segment's cumulative EDF-minus-EEG difference is fit against EEG
 %   elapsed time. The function errors when a fit residual exceeds the
@@ -56,9 +58,17 @@ for history_i = 1:height(history)
         if ~alignment_locked
             continue
         end
-        [loss_pairs, alignment_locked] = loss_interval_pairs( ...
-            history(history_i, :), outcome, trigger_match_result, ...
-            eeg_input, edf_input);
+        [loss_pairs, amplifier_pairing_used] = ...
+            amplifier_loss_interval_pairs( ...
+                history(history_i, :), trigger_match_result, ...
+                eeg_input, edf_input);
+        if amplifier_pairing_used
+            alignment_locked = true;
+        else
+            [loss_pairs, alignment_locked] = loss_interval_pairs( ...
+                history(history_i, :), outcome, trigger_match_result, ...
+                eeg_input, edf_input);
+        end
         interval_pairs = [interval_pairs; loss_pairs]; %#ok<AGROW>
     elseif outcome == "both_systems_unusable"
         if alignment_locked
@@ -78,6 +88,9 @@ for history_i = 1:height(history)
             'Unsupported comparison-history outcome: %s.', outcome)
     end
 end
+
+interval_pairs = exclude_amplifier_intervals( ...
+    interval_pairs, trigger_match_result);
 
 if isempty(interval_pairs)
     error('extract_segments:NoMatchedIntervals', ...
@@ -260,6 +273,112 @@ title(ax, 'Cumulative trigger-timing difference', ...
     'FontSize', 24)
 legend(ax, 'show', 'Location', 'best', 'FontSize', 20)
 grid(ax, 'on')
+
+end
+
+%%
+function [pairs, handled] = amplifier_loss_interval_pairs( ...
+    history_row, trigger_match_result, eeg_input, edf_input)
+
+pairs = empty_interval_pair_table;
+handled = false;
+if ~isfield(trigger_match_result, 'amplifier_interruptions')
+    return
+end
+
+interruptions = trigger_match_result.amplifier_interruptions;
+if isempty(interruptions) || ...
+        ~all(ismember( ...
+            ["exclude_from_segments", ...
+             "eeg_start_anchor_event_index", ...
+             "eeg_end_anchor_event_index"], ...
+            string(interruptions.Properties.VariableNames)))
+    return
+end
+
+eeg_edges = extract_chunk_edges( ...
+    eeg_input, history_row.eeg_chunk_index);
+edf_edges = extract_chunk_edges( ...
+    edf_input, history_row.edf_chunk_index);
+covered_by_interruption = false(height(eeg_edges), 1);
+for interruption_i = find(interruptions.exclude_from_segments)'
+    start_anchor = interruptions.eeg_start_anchor_event_index( ...
+        interruption_i);
+    end_anchor = interruptions.eeg_end_anchor_event_index( ...
+        interruption_i);
+    if isnan(start_anchor) && isnan(end_anchor)
+        row_covered = true(height(eeg_edges), 1);
+    elseif isnan(start_anchor)
+        row_covered = eeg_edges.source_event_index < end_anchor;
+    elseif isnan(end_anchor)
+        row_covered = eeg_edges.source_event_index >= start_anchor;
+    elseif end_anchor > start_anchor
+        row_covered = ...
+            eeg_edges.source_event_index >= start_anchor & ...
+            eeg_edges.source_event_index < end_anchor;
+    else
+        row_covered = eeg_edges.source_event_index == start_anchor;
+    end
+    covered_by_interruption = covered_by_interruption | row_covered;
+end
+if ~any(covered_by_interruption) || ...
+        height(eeg_edges) ~= height(edf_edges) || ...
+        ~isequal(eeg_edges.source_type, edf_edges.source_type) || ...
+        ~isequal(eeg_edges.destination_type, edf_edges.destination_type)
+    return
+end
+
+interval_number = (1:height(eeg_edges))';
+pairs = make_interval_pairs(eeg_edges, edf_edges, interval_number);
+handled = true;
+
+end
+
+%%
+function interval_pairs = exclude_amplifier_intervals( ...
+    interval_pairs, trigger_match_result)
+
+if isempty(interval_pairs) || ...
+        ~isfield(trigger_match_result, 'amplifier_interruptions')
+    return
+end
+
+interruptions = trigger_match_result.amplifier_interruptions;
+required_variables = [ ...
+    "exclude_from_segments", ...
+    "eeg_start_anchor_event_index", "eeg_end_anchor_event_index"];
+if isempty(interruptions) || ...
+        ~all(ismember(required_variables, ...
+            string(interruptions.Properties.VariableNames)))
+    return
+end
+
+keep_interval = true(height(interval_pairs), 1);
+for interruption_i = find(interruptions.exclude_from_segments)'
+    start_anchor = interruptions.eeg_start_anchor_event_index( ...
+        interruption_i);
+    end_anchor = interruptions.eeg_end_anchor_event_index( ...
+        interruption_i);
+    if isnan(start_anchor) && isnan(end_anchor)
+        unsafe_interval = true(height(interval_pairs), 1);
+    elseif isnan(start_anchor)
+        unsafe_interval = ...
+            interval_pairs.eeg_source_event_index < end_anchor;
+    elseif isnan(end_anchor)
+        unsafe_interval = ...
+            interval_pairs.eeg_source_event_index >= start_anchor;
+    elseif end_anchor > start_anchor
+        unsafe_interval = ...
+            interval_pairs.eeg_source_event_index >= start_anchor & ...
+            interval_pairs.eeg_source_event_index < end_anchor;
+    else
+        unsafe_interval = ...
+            interval_pairs.eeg_source_event_index == start_anchor;
+    end
+    keep_interval(unsafe_interval) = false;
+end
+
+interval_pairs = interval_pairs(keep_interval, :);
 
 end
 

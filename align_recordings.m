@@ -5,8 +5,8 @@ function [] = align_recordings(subject_code, trig_channel)
 
 %%%%%%%%%%%%%%%% Change these parameters
 
-subject_code='sas_023';
-trig_channel='TcPPG';
+subject_code='sas_025';
+trig_channel='TcPPG'; % 'TcPPG';
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%
@@ -85,7 +85,7 @@ edf_input.Fs = edf_Fs;
 eeg_input.EEG = EEG;
 eeg_input.Fs = eeg_Fs;
 
-% a) extract triggers from the HD-EEG events and EDF trigger channel 
+% a) extract triggers from the HD-EEG events and EDF trigger channel
 [eeg_input, edf_input] = extract_triggers(eeg_input, edf_input, true);
 
 % b) match trigger intervals between the two systems

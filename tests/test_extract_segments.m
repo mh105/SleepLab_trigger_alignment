@@ -76,6 +76,146 @@ for affected_system = ["eeg", "edf"]
 end
 end
 
+function testMarkedExactCountShortenedIntervalSplitsAtAnchors(testCase)
+[eeg, edf] = build_pair(complete_keep, complete_keep);
+eeg_start_anchor = 70;
+eeg_end_anchor = eeg_start_anchor + 1;
+eeg.event_table.latency(eeg_end_anchor:end) = ...
+    eeg.event_table.latency(eeg_end_anchor:end) - eeg.Fs;
+eeg = attach_amplifier_interruptions( ...
+    eeg, eeg_start_anchor, eeg_end_anchor, "paired");
+[result, eeg, edf] = match_triggers(eeg, edf);
+
+report = extract_segments(result, eeg, edf);
+
+verifyEqual(testCase, height(report), 2)
+verifyEqual(testCase, report.eeg_end_sample(1), ...
+    double(eeg.event_table.latency(eeg_start_anchor)))
+verifyEqual(testCase, report.eeg_start_sample(2), ...
+    double(eeg.event_table.latency(eeg_end_anchor)))
+verifyEqual(testCase, report.edf_end_sample(1), ...
+    result.amplifier_interruptions.edf_start_anchor_latency)
+verifyEqual(testCase, report.edf_start_sample(2), ...
+    result.amplifier_interruptions.edf_end_anchor_latency)
+end
+
+function testMarkedMultiIntervalPerfectTimingStillSplits(testCase)
+[eeg, edf] = build_pair(complete_keep, complete_keep);
+eeg_start_anchor = 70;
+eeg_end_anchor = eeg_start_anchor + 3;
+eeg = attach_amplifier_interruptions( ...
+    eeg, eeg_start_anchor, eeg_end_anchor, "paired");
+[result, eeg, edf] = match_triggers(eeg, edf);
+
+report = extract_segments(result, eeg, edf);
+
+verifyEqual(testCase, height(report), 2)
+verifyEqual(testCase, report.eeg_end_sample(1), ...
+    double(eeg.event_table.latency(eeg_start_anchor)))
+verifyEqual(testCase, report.eeg_start_sample(2), ...
+    double(eeg.event_table.latency(eeg_end_anchor)))
+end
+
+function testMarkedCrossBoundaryBracketSplitsAtExplicitAnchors(testCase)
+[eeg, edf] = build_pair(complete_keep, complete_keep);
+eeg_start_anchor = 99;
+eeg_end_anchor = 102;
+eeg = attach_amplifier_interruptions( ...
+    eeg, eeg_start_anchor, eeg_end_anchor, "paired");
+[result, eeg, edf] = match_triggers(eeg, edf);
+
+report = extract_segments(result, eeg, edf);
+
+verifyEqual(testCase, height(report), 2)
+verifyEqual(testCase, report.eeg_end_sample(1), ...
+    double(eeg.event_table.latency(eeg_start_anchor)))
+verifyEqual(testCase, report.eeg_start_sample(2), ...
+    double(eeg.event_table.latency(eeg_end_anchor)))
+end
+
+function testMarkedSingleIntervalWithinToleranceStaysContinuous(testCase)
+[eeg, edf] = build_pair(complete_keep, complete_keep);
+eeg_start_anchor = 70;
+eeg_end_anchor = eeg_start_anchor + 1;
+tolerance_sec = 2 / min([eeg.Fs, edf.trigger_Fs]);
+within_tolerance_samples = floor(tolerance_sec * eeg.Fs);
+eeg.event_table.latency(eeg_end_anchor:end) = ...
+    eeg.event_table.latency(eeg_end_anchor:end) - ...
+    within_tolerance_samples;
+eeg = attach_amplifier_interruptions( ...
+    eeg, eeg_start_anchor, eeg_end_anchor, "paired");
+[result, eeg, edf] = match_triggers(eeg, edf);
+
+report = extract_segments(result, eeg, edf);
+
+verifyEqual(testCase, height(report), 1)
+verifyEqual(testCase, ...
+    result.amplifier_interruptions.resolution_status, ...
+    "retained_within_tolerance")
+verifyFalse(testCase, ...
+    result.amplifier_interruptions.exclude_from_segments)
+end
+
+function testTerminalMissingReconnectEndsAtDisconnectAnchor(testCase)
+terminal_keep = complete_keep;
+terminal_keep{end} = (1:30)';
+[eeg, edf] = build_pair(terminal_keep, terminal_keep);
+eeg_start_anchor = 211;
+eeg = attach_amplifier_interruptions( ...
+    eeg, eeg_start_anchor, NaN, "missing_reconnect");
+[result, eeg, edf] = match_triggers(eeg, edf);
+
+report = extract_segments(result, eeg, edf);
+
+verifyEqual(testCase, height(report), 1)
+verifyEqual(testCase, report.eeg_end_sample, ...
+    double(eeg.event_table.latency(eeg_start_anchor)))
+verifyEqual(testCase, report.edf_end_sample, ...
+    result.amplifier_interruptions.edf_start_anchor_latency)
+verifyEqual(testCase, ...
+    result.amplifier_interruptions.resolution_status, ...
+    "terminal_eeg_loss")
+end
+
+function testDuplicateSameIntervalInterruptionsExcludeOnlyOnce(testCase)
+[eeg, edf] = build_pair(complete_keep, complete_keep);
+eeg_start_anchor = 70;
+eeg_end_anchor = eeg_start_anchor + 1;
+eeg.event_table.latency(eeg_end_anchor:end) = ...
+    eeg.event_table.latency(eeg_end_anchor:end) - eeg.Fs;
+eeg = attach_amplifier_interruptions( ...
+    eeg, repmat(eeg_start_anchor, 2, 1), ...
+    repmat(eeg_end_anchor, 2, 1), repmat("paired", 2, 1));
+[result, eeg, edf] = match_triggers(eeg, edf);
+
+report = extract_segments(result, eeg, edf);
+
+verifyEqual(testCase, height(result.amplifier_interruptions), 2)
+verifyEqual(testCase, ...
+    numel(unique(result.amplifier_interruptions.gap_group_index)), 1)
+verifyEqual(testCase, height(result.missing_periods), 1)
+verifyEqual(testCase, height(report), 2)
+verifyEqual(testCase, report.eeg_end_sample(1), ...
+    double(eeg.event_table.latency(eeg_start_anchor)))
+verifyEqual(testCase, report.eeg_start_sample(2), ...
+    double(eeg.event_table.latency(eeg_end_anchor)))
+end
+
+function testOverlappingLeadingInterruptionDoesNotLeakEarlyInterval(testCase)
+[eeg, edf] = build_pair(complete_keep, complete_keep);
+eeg.event_table.latency(1:2) = eeg.event_table.latency(1:2) + eeg.Fs;
+eeg = attach_amplifier_interruptions( ...
+    eeg, [NaN; 2], [3; 3], ["paired"; "paired"]);
+[result, eeg, edf] = match_triggers(eeg, edf);
+
+report = extract_segments(result, eeg, edf);
+
+verifyEqual(testCase, report.eeg_start_sample(1), ...
+    double(eeg.event_table.latency(3)))
+verifyEqual(testCase, report.edf_start_sample(1), ...
+    double(edf.event_table.latency(3)))
+end
+
 function testMissingBoundaryMapsSuffixToSkippedCleanChunk(testCase)
 [eeg, edf] = build_pair(missing_boundary_keep, complete_keep);
 [result, eeg, edf] = match_triggers(eeg, edf);
@@ -282,6 +422,77 @@ eeg.event_table = build_event_table(eeg.Fs, 0, eeg_keep);
 edf.Fs = 256;
 edf.trigger_Fs = 128;
 edf.event_table = build_event_table(edf.trigger_Fs, 100, edf_keep);
+
+end
+
+function system = attach_amplifier_interruptions( ...
+    system, eeg_start_anchor, eeg_end_anchor, pairing_status)
+
+eeg_start_anchor = eeg_start_anchor(:);
+eeg_end_anchor = eeg_end_anchor(:);
+pairing_status = string(pairing_status(:));
+n_interruptions = numel(eeg_start_anchor);
+if isscalar(eeg_end_anchor) && n_interruptions > 1
+    eeg_end_anchor = repmat(eeg_end_anchor, n_interruptions, 1);
+end
+if isscalar(pairing_status) && n_interruptions > 1
+    pairing_status = repmat(pairing_status, n_interruptions, 1);
+end
+assert(numel(eeg_end_anchor) == n_interruptions && ...
+    numel(pairing_status) == n_interruptions, ...
+    'Synthetic interruption inputs must have equal lengths.')
+
+interruption_id = (1:n_interruptions)';
+disconnect_raw_event_index = ...
+    height(system.event_table) + (1:2:(2 * n_interruptions))';
+disconnect_latency = nan(n_interruptions, 1);
+eeg_start_anchor_latency = nan(n_interruptions, 1);
+finite_start = isfinite(eeg_start_anchor);
+disconnect_latency(finite_start) = double( ...
+    system.event_table.latency(eeg_start_anchor(finite_start)));
+eeg_start_anchor_latency(finite_start) = ...
+    disconnect_latency(finite_start);
+disconnect_latency(~finite_start) = ...
+    double(system.event_table.latency(1)) - 1;
+disconnect_event_text = repmat( ...
+    "9001, Amplifier disconnected", n_interruptions, 1);
+reconnect_raw_event_index = nan(n_interruptions, 1);
+reconnect_latency = nan(n_interruptions, 1);
+reconnect_event_text = strings(n_interruptions, 1);
+eeg_end_anchor_latency = nan(n_interruptions, 1);
+
+for interruption_i = 1:n_interruptions
+    if pairing_status(interruption_i) == "paired"
+        reconnect_raw_event_index(interruption_i) = ...
+            disconnect_raw_event_index(interruption_i) + 1;
+        reconnect_latency(interruption_i) = double( ...
+            system.event_table.latency(eeg_end_anchor(interruption_i)));
+        reconnect_event_text(interruption_i) = ...
+            "9002, Amplifier reconnected";
+        eeg_end_anchor_latency(interruption_i) = ...
+            reconnect_latency(interruption_i);
+    else
+        assert(pairing_status(interruption_i) == "missing_reconnect", ...
+            'Unsupported synthetic amplifier interruption status.')
+        eeg_end_anchor(interruption_i) = NaN;
+    end
+end
+
+system.amplifier_interruptions = table( ...
+    interruption_id, pairing_status, ...
+    disconnect_raw_event_index, disconnect_latency, ...
+    disconnect_event_text, ...
+    reconnect_raw_event_index, reconnect_latency, reconnect_event_text, ...
+    eeg_start_anchor, eeg_start_anchor_latency, ...
+    eeg_end_anchor, eeg_end_anchor_latency, ...
+    'VariableNames', { ...
+        'interruption_id', 'pairing_status', ...
+        'disconnect_raw_event_index', 'disconnect_latency', ...
+        'disconnect_event_text', ...
+        'reconnect_raw_event_index', 'reconnect_latency', ...
+        'reconnect_event_text', ...
+        'eeg_start_anchor_event_index', 'eeg_start_anchor_latency', ...
+        'eeg_end_anchor_event_index', 'eeg_end_anchor_latency'});
 
 end
 
