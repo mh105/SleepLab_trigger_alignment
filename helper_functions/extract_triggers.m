@@ -70,7 +70,7 @@ trigger_offset = find(trigger_edges == -1) - 1;
 
 trigger_voltage_ranges = [
     5 6
-    11 12
+    11 12.1
     18 19
     24 25
     30 31
