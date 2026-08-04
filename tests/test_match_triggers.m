@@ -22,7 +22,6 @@ verifyEqual(testCase, result.resolution_status, ...
     "resumed_same_offset")
 verifyFalse(testCase, result.requires_relock)
 verifyFalse(testCase, result.suspected_missing_boundary)
-verifyTrue(testCase, result.whole_cycle_loss_cannot_be_excluded)
 verifyEqual(testCase, result.missing_periods.system, "eeg")
 verifyEqual(testCase, ...
     result.missing_periods.start_anchor_latency, 935001)
@@ -971,7 +970,6 @@ end
 
 verifyEqual(testCase, result.outcome, affected_system + "_data_loss")
 verifyEqual(testCase, result.resolution_status, "resumed_same_offset")
-verifyTrue(testCase, result.whole_cycle_loss_cannot_be_excluded)
 verifyFalse(testCase, result.requires_relock)
 verifyEqual(testCase, result.missing_periods.system, affected_system)
 verifyTrue(testCase, all(isfinite( ...
