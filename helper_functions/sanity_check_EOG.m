@@ -104,6 +104,7 @@ for channel_i = 1:4
         plot_data{channel_i}(:).', ...
         'LineWidth', 0.75, ...
         'DisplayName', display_names{channel_i})
+    axes_handles(channel_i).InteractionOptions.DatatipsSupported = 'off';
     title(axes_handles(channel_i), plot_titles{channel_i})
     ylabel(axes_handles(channel_i), 'Voltage (\muV)')
     grid(axes_handles(channel_i), 'on')
