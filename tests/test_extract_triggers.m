@@ -32,6 +32,53 @@ verifyEqual(testCase, edf_output.trig_diff_sec, ...
     diff((double(edf_output.trig_index) - 1) ./ edf_input.trigger_Fs))
 end
 
+function testEdfWithoutValidationRetainsLeading63Triggers(testCase)
+edf_trigger_type = [ ...
+    repmat("63", 3, 1); ...
+    repmat("64", 4, 1); ...
+    repmat("63", 6, 1)];
+[eeg_input, edf_input] = build_inputs( ...
+    [], strings(0, 1), edf_trigger_type);
+
+[~, edf_output] = extract_triggers(eeg_input, edf_input);
+
+verifyEqual(testCase, edf_output.event_table.type, edf_trigger_type)
+verifyEqual(testCase, edf_output.validation_sequence_count, 0)
+verifySize(testCase, edf_output.validation_sequences, [0, 2])
+verifyTrue(testCase, isnan(edf_output.last_validation_start_latency))
+verifyTrue(testCase, isnan(edf_output.last_validation_end_latency))
+verifyEqual(testCase, ...
+    edf_output.pre_authoritative_validation_event_count, 0)
+end
+
+function testFinalEdfValidationIsAuthoritative(testCase)
+validation_type = ["1"; "2"; "4"; "8"; "16"; "32"; "64"];
+pre_authoritative_type = [ ...
+    repmat("64", 4, 1); repmat("63", 3, 1)];
+post_authoritative_type = [ ...
+    repmat("64", 4, 1); repmat("63", 6, 1)];
+edf_trigger_type = [ ...
+    validation_type; ...
+    pre_authoritative_type; ...
+    validation_type; ...
+    post_authoritative_type];
+[eeg_input, edf_input] = build_inputs( ...
+    [], strings(0, 1), edf_trigger_type);
+
+[~, edf_output] = extract_triggers(eeg_input, edf_input);
+
+verifyEqual(testCase, edf_output.validation_sequence_count, 2)
+verifyEqual(testCase, edf_output.validation_sequences.start_latency, [5; 145])
+verifyEqual(testCase, edf_output.validation_sequences.end_latency, [65; 205])
+verifyEqual(testCase, edf_output.last_validation_start_latency, 145)
+verifyEqual(testCase, edf_output.last_validation_end_latency, 205)
+verifyEqual(testCase, ...
+    edf_output.pre_authoritative_validation_event_count, ...
+    numel(pre_authoritative_type))
+verifyEqual(testCase, edf_output.event_table.type, ...
+    [pre_authoritative_type; post_authoritative_type])
+end
+
 function testPairedMarkersAllowFlexibleWordingAndPreserveRawText(testCase)
 marker_latency = [2501; 2601];
 marker_type = [ ...
@@ -137,12 +184,16 @@ verifyError(testCase, @() extract_triggers(eeg_input, edf_input), ...
 end
 
 function [eeg_input, edf_input, alignment_type] = ...
-    build_inputs(marker_latency, marker_type)
+    build_inputs(marker_latency, marker_type, edf_trigger_type)
 
 validation_type = ["1"; "2"; "4"; "8"; "16"; "32"; "64"];
 validation_latency = (101:100:701)';
 alignment_type = [repmat("64", 4, 1); repmat("63", 6, 1)];
 alignment_latency = (1001:1000:10001)';
+
+if nargin < 3
+    edf_trigger_type = [validation_type; alignment_type];
+end
 
 event_type = [validation_type; alignment_type; marker_type(:)];
 event_latency = [validation_latency; alignment_latency; marker_latency(:)];
@@ -163,7 +214,7 @@ eeg_input.Fs = 500;
 
 edf_input.trigger_Fs = 128;
 edf_input.Fs = 256;
-edf_input.DC_trace = build_edf_trace([validation_type; alignment_type]);
+edf_input.DC_trace = build_edf_trace(edf_trigger_type);
 end
 
 function DC_trace = build_edf_trace(trigger_type)

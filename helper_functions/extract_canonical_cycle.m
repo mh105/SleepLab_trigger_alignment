@@ -23,6 +23,7 @@ assert(isnumeric(event_table.latency), ...
 
 latency = double(event_table.latency(:));
 trigger_type = strip(string(event_table.type(:)));
+original_latency = latency;
 
 assert(~isempty(latency), 'event_table must contain at least one trigger.')
 assert(all(isfinite(latency)) && all(diff(latency) > 0), ...
@@ -46,15 +47,18 @@ assert(all(run_length == 4), ...
      'Remove incomplete 64 runs before calling this function.'])
 
 boundary_start = run_start;
-assert(boundary_start(1) == 1, ...
-    'The first four events must be the initial 64-trigger boundary.')
 assert(numel(boundary_start) >= 3, ...
     ['At least three intact 64-trigger boundaries are required to ' ...
      'identify a repeated bounded-cycle structure.'])
 
+leading_event_count = boundary_start(1) - 1;
+latency = latency(leading_event_count + 1:end);
+trigger_type = trigger_type(leading_event_count + 1:end);
+boundary_start = boundary_start - leading_event_count;
+
 n_chunks = numel(boundary_start);
 n_bounded_chunks = n_chunks - 1;
-chunk_end = [boundary_start(2:end) - 1; height(event_table)];
+chunk_end = [boundary_start(2:end) - 1; numel(latency)];
 
 chunk_type = cell(n_chunks, 1);
 chunk_interval_sec = cell(n_chunks, 1);
@@ -126,8 +130,8 @@ canonical_duration_sec = sum(canonical_interval_sec);
 
 %% Compare every observed chunk with the canonical cycle
 chunk_index = (1:n_chunks)';
-start_event_index = boundary_start;
-end_event_index = chunk_end;
+start_event_index = boundary_start + leading_event_count;
+end_event_index = chunk_end + leading_event_count;
 start_latency = latency(boundary_start);
 start_time_sec = (start_latency - 1) ./ Fs;
 observed_trigger_count = chunk_end - boundary_start + 1;
@@ -176,6 +180,33 @@ chunk_report = table( ...
     start_time_sec, observed_trigger_count, chunk_duration_sec, ...
     has_next_boundary, estimated_cycle_count, status, reason, ...
     max_interval_error_sec);
+
+if leading_event_count > 0
+    partial_chunk_index = 1;
+    partial_start_event_index = 1;
+    partial_end_event_index = leading_event_count;
+    partial_start_latency = original_latency(1);
+    partial_start_time_sec = (partial_start_latency - 1) ./ Fs;
+    partial_observed_trigger_count = leading_event_count;
+    partial_chunk_duration_sec = ( ...
+        original_latency(leading_event_count + 1) - original_latency(1)) ./ Fs;
+    partial_has_next_boundary = true;
+    partial_estimated_cycle_count = NaN;
+    partial_status = "partial_start";
+    partial_reason = "leading_boundary_not_observed";
+    partial_max_interval_error_sec = NaN;
+
+    partial_chunk_report = table( ...
+        partial_chunk_index, ...
+        partial_start_event_index, partial_end_event_index, ...
+        partial_start_latency, partial_start_time_sec, ...
+        partial_observed_trigger_count, partial_chunk_duration_sec, ...
+        partial_has_next_boundary, partial_estimated_cycle_count, ...
+        partial_status, partial_reason, partial_max_interval_error_sec, ...
+        'VariableNames', chunk_report.Properties.VariableNames);
+    chunk_report.chunk_index = chunk_report.chunk_index + 1;
+    chunk_report = [partial_chunk_report; chunk_report];
+end
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % END OF EXTRACT_CANONICAL_CYCLE (MAIN FUNCTION)

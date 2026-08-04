@@ -500,6 +500,145 @@ verifyTrue(testCase, ...
     all(isnan(result.missing_periods.end_anchor_latency)))
 end
 
+function testNoValidationPartialStartupMatchesCanonicalSuffix(testCase)
+[eeg, edf] = build_pair(six_complete_keep, partial_start_keep);
+edf = attach_no_validation_metadata(edf);
+
+[result, eeg_output, edf_output] = run_match(eeg, edf);
+
+verifyEqual(testCase, result.startup_mode, "partial_cycle_late_start")
+verifyEqual(testCase, edf_output.startup_mode, ...
+    "partial_cycle_late_start")
+verifyEqual(testCase, edf_output.chunk_report.status(1), "partial_start")
+verifyEqual(testCase, result.initial_canonical_interval_number, 25)
+verifyEqual(testCase, result.initial_matching_interval_count, 26)
+verifyEqual(testCase, result.initial_matching_candidate_count, 1)
+verifyEqual(testCase, result.initial_matching_prefix_interval_count, 0)
+verifyEqual(testCase, result.initial_matching_suffix_interval_count, 26)
+verifyEqual(testCase, result.eeg_initial_anchor_event_index, 25)
+verifyEqual(testCase, result.edf_initial_anchor_event_index, 1)
+verifyEqual(testCase, eeg_output.event_table.type(25), "63")
+verifyEqual(testCase, edf_output.event_table.type(1), "63")
+verifyEqual(testCase, find(eeg_output.event_table.is_pre_alignment), ...
+    (1:24)')
+verifyEqual(testCase, find(edf_output.event_table.is_pre_alignment), ...
+    zeros(0, 1))
+verifyEqual(testCase, result.comparison_history{1, 1:2}, [1 1])
+verifyEqual(testCase, result.comparison_history.outcome(1), ...
+    "partial_start_match")
+verifyEqual(testCase, result.comparison_history.resolution_status(1), ...
+    "initial_canonical_suffix_match")
+verifyEqual(testCase, result.comparison_history{1, 7:8}, [2 2])
+end
+
+function testPartialStartupExcludesInterruptionBeforeInitialAnchor(testCase)
+[eeg, edf] = build_pair(six_complete_keep, partial_start_keep);
+eeg = attach_amplifier_interruption(eeg, 10, 20, "paired");
+edf = attach_no_validation_metadata(edf);
+
+result = run_match(eeg, edf);
+
+verifyEqual(testCase, result.eeg_initial_anchor_event_index, 25)
+verifyEqual(testCase, ...
+    result.amplifier_interruptions.resolution_status, ...
+    "before_initial_alignment")
+verifyTrue(testCase, ...
+    result.amplifier_interruptions.exclude_from_segments)
+end
+
+function testPartialStartupLeadingInterruptionUpdatesOperationalAnchor(testCase)
+[eeg, edf] = build_pair(six_complete_keep, partial_start_keep);
+eeg = attach_amplifier_interruption(eeg, NaN, 30, "paired");
+edf = attach_no_validation_metadata(edf);
+
+[result, eeg_output, edf_output] = run_match(eeg, edf);
+
+verifyEqual(testCase, result.initial_canonical_interval_number, 25)
+verifyEqual(testCase, result.eeg_initial_anchor_event_index, 30)
+verifyEqual(testCase, result.edf_initial_anchor_event_index, 6)
+verifyEqual(testCase, result.eeg_pre_alignment_event_count, 29)
+verifyEqual(testCase, find(eeg_output.event_table.is_pre_alignment), ...
+    (1:29)')
+verifyEqual(testCase, ...
+    find(eeg_output.event_table.is_initial_alignment_anchor), 30)
+verifyEqual(testCase, ...
+    find(edf_output.event_table.is_initial_alignment_anchor), 6)
+end
+
+function testPartialStartupRejectsInterruptionWithinMatchedSuffix(testCase)
+[eeg, edf] = build_pair(six_complete_keep, partial_start_keep);
+eeg = attach_amplifier_interruption(eeg, 30, 31, "paired");
+edf = attach_no_validation_metadata(edf);
+
+verifyError(testCase, @() run_match(eeg, edf), ...
+    'match_triggers:PartialStartAmplifierInterruption')
+end
+
+function testNoValidationPartialStartupRequiresTwoIntervals(testCase)
+[eeg, edf] = build_pair(six_complete_keep, ...
+    one_interval_partial_start_keep);
+edf = attach_no_validation_metadata(edf);
+
+verifyError(testCase, @() run_match(eeg, edf), ...
+    'match_triggers:LateStartInsufficientEvidence')
+end
+
+function testNoValidationPartialStartupRejectsCanonicalMismatch(testCase)
+[eeg, edf] = build_pair(six_complete_keep, partial_start_keep);
+edf = attach_no_validation_metadata(edf);
+edf.event_table.latency(1) = ...
+    edf.event_table.latency(1) + edf.trigger_Fs;
+
+verifyError(testCase, @() run_match(eeg, edf), ...
+    'match_triggers:LateStartCanonicalMismatch')
+end
+
+function testPartialStartupRequiresValidationMetadata(testCase)
+[eeg, edf] = build_pair(six_complete_keep, partial_start_keep);
+
+verifyError(testCase, @() run_match(eeg, edf), ...
+    'match_triggers:PartialStartRequiresValidationMetadata')
+end
+
+function testLastValidationRestartUsesPostValidationChunkDomain(testCase)
+[eeg, edf] = build_pair(six_complete_keep, six_complete_keep);
+pre_authoritative_event_count = 50;
+edf = attach_restart_metadata(edf, pre_authoritative_event_count);
+
+[result, eeg_output, edf_output] = run_match(eeg, edf);
+
+verifyEqual(testCase, result.startup_mode, "restart_at_last_validation")
+verifyEqual(testCase, result.initial_alignment_reason, ...
+    "restart_at_last_validation")
+verifyEqual(testCase, result.edf_pre_alignment_event_count, 50)
+verifyEqual(testCase, result.eeg_initial_anchor_event_index, 1)
+verifyEqual(testCase, result.edf_initial_anchor_event_index, 51)
+verifyEqual(testCase, edf_output.chunk_report.chunk_index(1), 1)
+verifyEqual(testCase, edf_output.chunk_report.start_event_index(1), 51)
+verifyEqual(testCase, result.comparison_history{1, 1:2}, [1 1])
+verifyEqual(testCase, result.comparison_history.outcome(1), "match")
+verifyEqual(testCase, find(eeg_output.event_table.is_pre_alignment), ...
+    zeros(0, 1))
+verifyEqual(testCase, find(edf_output.event_table.is_pre_alignment), ...
+    (1:50)')
+verifyEqual(testCase, ...
+    find(eeg_output.event_table.is_initial_alignment_anchor), 1)
+verifyEqual(testCase, ...
+    find(edf_output.event_table.is_initial_alignment_anchor), 51)
+end
+
+function testLastValidationRestartRejectsFirstPostValidationMismatch(testCase)
+[eeg, edf] = build_pair(six_complete_keep, six_complete_keep);
+pre_authoritative_event_count = 50;
+edf = attach_restart_metadata(edf, pre_authoritative_event_count);
+mismatch_event_index = pre_authoritative_event_count + 25;
+edf.event_table.latency(mismatch_event_index) = ...
+    edf.event_table.latency(mismatch_event_index) + edf.trigger_Fs;
+
+verifyError(testCase, @() run_match(eeg, edf), ...
+    'match_triggers:PostValidationCycleMismatch')
+end
+
 function testAbortedEdfStartupAlignsAtRestartBoundary(testCase)
 [eeg, edf, ~] = build_pair( ...
     complete_keep, edf_aborted_startup_keep);
@@ -1179,6 +1318,20 @@ keep_by_cycle = repmat({(1:50)'}, 6, 1);
 
 end
 
+function keep_by_cycle = partial_start_keep
+
+keep_by_cycle = six_complete_keep;
+keep_by_cycle{1} = (25:50)';
+
+end
+
+function keep_by_cycle = one_interval_partial_start_keep
+
+keep_by_cycle = six_complete_keep;
+keep_by_cycle{1} = 50;
+
+end
+
 function keep_by_cycle = edf_aborted_startup_keep
 
 keep_by_cycle = six_complete_keep;
@@ -1217,6 +1370,41 @@ function keep_by_cycle = late_missing_boundary_keep
 
 keep_by_cycle = complete_keep;
 keep_by_cycle{4} = (7:50)';
+
+end
+
+function system = attach_no_validation_metadata(system)
+
+system.validation_sequences = table( ...
+    zeros(0, 1), zeros(0, 1), ...
+    'VariableNames', {'start_latency', 'end_latency'});
+system.validation_sequence_count = 0;
+system.last_validation_start_latency = NaN;
+system.last_validation_end_latency = NaN;
+system.pre_authoritative_validation_event_count = 0;
+
+end
+
+function system = attach_restart_metadata( ...
+    system, pre_authoritative_event_count)
+
+first_validation_start_latency = ...
+    double(system.event_table.latency(1)) - 20;
+first_validation_end_latency = first_validation_start_latency + 10;
+last_validation_start_latency = ...
+    double(system.event_table.latency(pre_authoritative_event_count)) + 1;
+last_validation_end_latency = ...
+    double(system.event_table.latency( ...
+        pre_authoritative_event_count + 1)) - 1;
+system.validation_sequences = table( ...
+    [first_validation_start_latency; last_validation_start_latency], ...
+    [first_validation_end_latency; last_validation_end_latency], ...
+    'VariableNames', {'start_latency', 'end_latency'});
+system.validation_sequence_count = 2;
+system.last_validation_start_latency = last_validation_start_latency;
+system.last_validation_end_latency = last_validation_end_latency;
+system.pre_authoritative_validation_event_count = ...
+    pre_authoritative_event_count;
 
 end
 

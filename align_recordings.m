@@ -1,12 +1,12 @@
 function [] = align_recordings(subject_code, trig_channel)
 %% Sleep and EEG Recording Alignment with Stochastic (all night) Triggers
 % Assumes that you have triggers throughout the night and 
-% Last edit by Alex He 07/15/2026
+% Last edit by Alex He 08/03/2026
 
 %%%%%%%%%%%%%%%% Change these parameters
 
-subject_code='sas_025';
-trig_channel='TcPPG'; % 'TcPPG';
+subject_code='sas_031';
+trig_channel='TcPPG';
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%

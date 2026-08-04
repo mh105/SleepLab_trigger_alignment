@@ -75,6 +75,37 @@ verifyEqual(testCase, chunk_report.reason(end), "count_or_type")
 verifyEqual(testCase, chunk_report.start_time_sec, cycle_start_sec)
 end
 
+function testLeading63TriggersAreReportedAsPartialStart(testCase)
+Fs = 1000;
+interval_tolerance_sec = 2 / Fs;
+cycle_start_sec = (0:60:240)';
+has_boundary = true(size(cycle_start_sec));
+missing_63 = repmat({[]}, numel(cycle_start_sec), 1);
+
+event_table = build_event_table( ...
+    cycle_start_sec, has_boundary, missing_63, {}, Fs);
+event_table = event_table(5:end, :);
+[canonical_cycle, repeat_count, chunk_report] = ...
+    extract_canonical_cycle(event_table, Fs, interval_tolerance_sec);
+
+verifyEqual(testCase, canonical_cycle.type, ...
+    [repmat("64", 4, 1); repmat("63", 4, 1)])
+verifyEqual(testCase, repeat_count, 4)
+verifyEqual(testCase, chunk_report.chunk_index, (1:5)')
+verifyEqual(testCase, chunk_report.status(1), "partial_start")
+verifyEqual(testCase, chunk_report.reason(1), ...
+    "leading_boundary_not_observed")
+verifyEqual(testCase, chunk_report.start_event_index(1), 1)
+verifyEqual(testCase, chunk_report.end_event_index(1), 4)
+verifyEqual(testCase, chunk_report.observed_trigger_count(1), 4)
+verifyEqual(testCase, chunk_report.start_time_sec(1), 10)
+verifyEqual(testCase, chunk_report.chunk_duration_sec(1), 50)
+verifyTrue(testCase, chunk_report.has_next_boundary(1))
+verifyTrue(testCase, isnan(chunk_report.estimated_cycle_count(1)))
+verifyTrue(testCase, isnan(chunk_report.max_interval_error_sec(1)))
+verifyEqual(testCase, chunk_report.start_event_index(2), 5)
+end
+
 function testIntervalTolerance(testCase)
 Fs = 1000;
 interval_tolerance_sec = 2 / Fs;

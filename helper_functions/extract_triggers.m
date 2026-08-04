@@ -187,15 +187,24 @@ use_edf_alignment = edf_trigger_table.type ~= "orphan";
 
 edf_validation_pattern = ["1"; "2"; "4"; "8"; "16"; "32"; "64"];
 is_edf_validation = false(height(edf_trigger_table), 1);
+validation_start_row = zeros(0, 1);
+validation_end_row = zeros(0, 1);
 for trigger_i = 1:(height(edf_trigger_table) - numel(edf_validation_pattern) + 1)
     validation_idx = trigger_i:(trigger_i + numel(edf_validation_pattern) - 1);
     if isequal(edf_trigger_table.type(validation_idx), edf_validation_pattern)
         is_edf_validation(validation_idx) = true;
+        validation_start_row(end + 1, 1) = validation_idx(1);
+        validation_end_row(end + 1, 1) = validation_idx(end);
     end
 end
 
-assert(any(is_edf_validation), ...
-    'Initial EDF validation trigger sequence does not match 1,2,4,8,16,32,64.')
+validation_sequences = table( ...
+    edf_trigger_table.latency(validation_start_row), ...
+    edf_trigger_table.latency(validation_end_row), ...
+    'VariableNames', {'start_latency', 'end_latency'});
+validation_sequence_count = height(validation_sequences);
+fprintf('EDF validation trigger sequences found: %d\n', ...
+    validation_sequence_count);
 use_edf_alignment(is_edf_validation) = false;
 
 edf_is64 = edf_trigger_table.type == "64";
@@ -232,9 +241,26 @@ edf_run_lengths = edf_run_end - edf_run_start + 1;
 assert(all(edf_run_lengths == 4), ...
     'One or more post-validation EDF 64-trigger runs does not have length 4.')
 
+if validation_sequence_count == 0
+    last_validation_start_latency = NaN;
+    last_validation_end_latency = NaN;
+    pre_authoritative_validation_event_count = 0;
+else
+    last_validation_start_latency = validation_sequences.start_latency(end);
+    last_validation_end_latency = validation_sequences.end_latency(end);
+    pre_authoritative_validation_event_count = sum( ...
+        edf_alignment_event_table.latency < last_validation_start_latency);
+end
+
 % store the event table and trigger index in samples
 edf_input.event_table = edf_alignment_event_table;
 edf_input.trig_index = edf_input.event_table.latency;
+edf_input.validation_sequences = validation_sequences;
+edf_input.validation_sequence_count = validation_sequence_count;
+edf_input.last_validation_start_latency = last_validation_start_latency;
+edf_input.last_validation_end_latency = last_validation_end_latency;
+edf_input.pre_authoritative_validation_event_count = ...
+    pre_authoritative_validation_event_count;
 
 %% Extract trigger latencies and plot them
 % Compute the latencies in seconds

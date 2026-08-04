@@ -35,6 +35,41 @@ verifyEqual(testCase, report.edf_end_sample, ...
     result.edf_terminal_anchor_latency)
 end
 
+function testPartialStartPreservesNumberingAndContinuesIntoFullChunk(testCase)
+[eeg, edf] = build_pair(complete_keep, partial_start_keep);
+edf.validation_sequence_count = 0;
+edf.validation_sequences = table( ...
+    zeros(0, 1), zeros(0, 1), ...
+    'VariableNames', {'start_latency', 'end_latency'});
+edf.pre_authoritative_validation_event_count = 0;
+[result, eeg, edf] = match_triggers(eeg, edf);
+
+verifyEqual(testCase, result.startup_mode, "partial_cycle_late_start")
+verifyEqual(testCase, result.comparison_history.outcome(1:2), ...
+    ["partial_start_match"; "match"])
+verifyEqual(testCase, result.comparison_history{1:2, 1:2}, ...
+    [1 1; 2 2])
+verifyEqual(testCase, result.initial_canonical_interval_number, 25)
+verifyEqual(testCase, result.eeg_initial_anchor_event_index, 25)
+verifyEqual(testCase, result.edf_initial_anchor_event_index, 1)
+
+report = extract_segments(result, eeg, edf);
+
+verifyEqual(testCase, height(report), 1)
+verifyEqual(testCase, ...
+    report{1, {'start_eeg_chunk', 'start_edf_chunk', 'start_interval', ...
+    'end_eeg_chunk', 'end_edf_chunk', 'end_interval'}}, ...
+    [1 1 25 5 5 49])
+verifyEqual(testCase, report.eeg_start_sample, ...
+    double(eeg.event_table.latency(25)))
+verifyEqual(testCase, report.edf_start_sample, ...
+    double(edf.event_table.latency(1)))
+verifyEqual(testCase, report.eeg_end_sample, ...
+    result.eeg_terminal_anchor_latency)
+verifyEqual(testCase, report.edf_end_sample, ...
+    result.edf_terminal_anchor_latency)
+end
+
 function testShortLossIsSplitAtCanonicalPrefixAndSuffix(testCase)
 for affected_system = ["eeg", "edf"]
     if affected_system == "eeg"
@@ -531,6 +566,13 @@ end
 function keep_by_cycle = complete_keep
 
 keep_by_cycle = repmat({(1:50)'}, 5, 1);
+
+end
+
+function keep_by_cycle = partial_start_keep
+
+keep_by_cycle = complete_keep;
+keep_by_cycle{1} = (25:50)';
 
 end
 
