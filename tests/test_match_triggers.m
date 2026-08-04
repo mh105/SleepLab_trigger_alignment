@@ -948,11 +948,64 @@ verifyError(testCase, @() run_match(eeg, edf), ...
     'match_triggers:TerminalCorrespondenceMismatch')
 end
 
-function testTerminalRequiresImmediatelyPrecedingLock(testCase)
-[eeg, edf, ~] = build_pair(complete_keep, late_short_loss_keep);
+function testResolvedPenultimateEegLossAllowsTerminalAlignment(testCase)
+verify_resolved_penultimate_loss(testCase, "eeg")
+end
 
-verifyError(testCase, @() run_match(eeg, edf), ...
-    'match_triggers:TerminalAlignmentNotLocked')
+function testResolvedPenultimateEdfLossAllowsTerminalAlignment(testCase)
+verify_resolved_penultimate_loss(testCase, "edf")
+end
+
+function verify_resolved_penultimate_loss(testCase, affected_system)
+clean_keep = partial_final_keep(30);
+loss_keep = clean_keep;
+loss_keep{4} = setdiff((1:50)', (12:13)', 'stable');
+
+if affected_system == "eeg"
+    [eeg, edf, ~] = build_pair(loss_keep, clean_keep);
+else
+    [eeg, edf, ~] = build_pair(clean_keep, loss_keep);
+end
+
+[result, eeg_output, edf_output] = run_match(eeg, edf);
+
+verifyEqual(testCase, result.outcome, affected_system + "_data_loss")
+verifyEqual(testCase, result.resolution_status, "resumed_same_offset")
+verifyTrue(testCase, result.whole_cycle_loss_cannot_be_excluded)
+verifyFalse(testCase, result.requires_relock)
+verifyEqual(testCase, result.missing_periods.system, affected_system)
+verifyTrue(testCase, all(isfinite( ...
+    result.missing_periods.end_anchor_event_index)))
+verifyTrue(testCase, result.terminal_chunk_handled)
+verifyEqual(testCase, result.terminal_relation, "same_last_trigger")
+verifyEqual(testCase, result.terminal_common_trigger_count, 30)
+verifyEqual(testCase, result.comparison_history.outcome(end - 1), ...
+    affected_system + "_data_loss")
+verifyEqual(testCase, ...
+    result.comparison_history.resolution_status(end - 1), ...
+    "resumed_same_offset")
+verifyEqual(testCase, result.comparison_history.outcome(end), ...
+    "same_last_trigger")
+verifyEqual(testCase, result.eeg_terminal_anchor_event_index, ...
+    height(eeg_output.event_table))
+verifyEqual(testCase, result.edf_terminal_anchor_event_index, ...
+    height(edf_output.event_table))
+end
+
+function testUnresolvedPenultimateLossStillRequiresLock(testCase)
+open_loss_keep = complete_keep;
+open_loss_keep{4} = (1:48)';
+
+for affected_system = ["eeg", "edf"]
+    if affected_system == "eeg"
+        [eeg, edf, ~] = build_pair(open_loss_keep, complete_keep);
+    else
+        [eeg, edf, ~] = build_pair(complete_keep, open_loss_keep);
+    end
+
+    verifyError(testCase, @() run_match(eeg, edf), ...
+        'match_triggers:TerminalAlignmentNotLocked')
+end
 end
 
 function testBoundarySkipCannotBypassTerminalRegion(testCase)

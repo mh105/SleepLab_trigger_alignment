@@ -111,6 +111,48 @@ for affected_system = ["eeg", "edf"]
 end
 end
 
+function testPenultimateLossSuffixContinuesThroughTerminal(testCase)
+clean_keep = complete_keep;
+clean_keep{5} = (1:30)';
+loss_keep = clean_keep;
+loss_keep{4} = setdiff((1:50)', (12:13)', 'stable');
+
+for affected_system = ["eeg", "edf"]
+    if affected_system == "eeg"
+        [eeg, edf] = build_pair(loss_keep, clean_keep);
+    else
+        [eeg, edf] = build_pair(clean_keep, loss_keep);
+    end
+    [result, eeg, edf] = match_triggers(eeg, edf);
+
+    report = extract_segments(result, eeg, edf);
+
+    verifyEqual(testCase, height(report), 2)
+    verifyEqual(testCase, ...
+        report{:, {'start_eeg_chunk', 'start_edf_chunk', ...
+        'start_interval', 'end_eeg_chunk', 'end_edf_chunk', ...
+        'end_interval'}}, ...
+        [1 1 1 4 4 10; 4 4 14 5 5 29])
+    verifyEqual(testCase, report.eeg_end_sample(2), ...
+        result.eeg_terminal_anchor_latency)
+    verifyEqual(testCase, report.edf_end_sample(2), ...
+        result.edf_terminal_anchor_latency)
+
+    loss = result.missing_periods(1, :);
+    if affected_system == "eeg"
+        verifyEqual(testCase, report.eeg_end_sample(1), ...
+            loss.start_anchor_latency)
+        verifyEqual(testCase, report.eeg_start_sample(2), ...
+            loss.end_anchor_latency)
+    else
+        verifyEqual(testCase, report.edf_end_sample(1), ...
+            loss.start_anchor_latency)
+        verifyEqual(testCase, report.edf_start_sample(2), ...
+            loss.end_anchor_latency)
+    end
+end
+end
+
 function testMarkedExactCountShortenedIntervalSplitsAtAnchors(testCase)
 [eeg, edf] = build_pair(complete_keep, complete_keep);
 eeg_start_anchor = 70;
