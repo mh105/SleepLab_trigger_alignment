@@ -554,10 +554,10 @@ With plotting enabled throughout the current entry point, it opens:
 - native-versus-aligned C3:M2 spectrograms; and
 - aligned-versus-clinical EOG traces.
 
-These figures are saved automatically as numbered alignment-check PNGs in the
-subject's `clinical` directory. Per-segment resampling traces use plot number 05,
-and per-segment spectra use plot number 06; the segment number is included in
-each filename.
+These figures are saved automatically as step-numbered alignment-check PNGs in
+the subject's `clinical` directory. Figures within the same step include an
+execution-order index so alphabetical sorting preserves their intended order;
+per-segment resampling filenames also include a zero-padded segment number.
 
 </details>
 
@@ -576,11 +576,12 @@ edfFN = strrep(fn_edf, '.edf', '_aligned.edf');
 blockEdfWrite(edfFN, header_all, signalHeader_final, signalCell_final);
 ```
 
-`align_recordings` returns no MATLAB value. Its durable outputs are the aligned
-EDF and numbered alignment-check PNGs; the progress report and matched-segment
-table are runtime QA artifacts. If a target filename already exists, treat the
-run as an overwrite operation and preserve any earlier result you need before
-rerunning.
+When its output is captured, `align_recordings` returns cleanup guards that keep
+the QA figures open until that output is cleared. With no captured output, its
+figures close before the function returns. Its durable outputs are the aligned
+EDF, alignment log, and step-numbered alignment-check PNGs. If a target filename
+already exists, treat the run as an overwrite operation and preserve any earlier
+result you need before rerunning.
 
 </details>
 
