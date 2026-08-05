@@ -80,75 +80,84 @@ checkout is elsewhere.
 <details>
 <summary><strong>Current input and recording assumptions</strong></summary>
 
-The implementation intentionally fails early when the Stanford acquisition
-contract is not met:
+The implementation relies on the following Stanford acquisition contract and
+fails early for most violations:
 
 - The HD-EEG `.set` file has a sampling rate of exactly 500 Hz.
 - The clinical EDF contains a channel labeled exactly `C3`, sampled at exactly
   256 Hz.
-- The EDF trigger channel is currently hard-coded to `TcPPG`.
-- The first non-impedance, non-boundary HD-EEG events are the validation
-  sequence `1, 2, 4, 8, 16, 32, 64`.
-- At least one `1, 2, 4, 8, 16, 32, 64` validation sequence is also present in
-  the decoded EDF triggers.
+- The selected EDF trigger channel is sampled at exactly 128 Hz. The optional
+  `trig_channel` argument defaults to `TcPPG`.
+- After impedance events, `boundary` events, and `9001`/`9002` amplifier markers
+  are excluded, the first remaining HD-EEG events are the validation sequence
+  `1, 2, 4, 8, 16, 32, 64`.
+- The decoded EDF may contain zero or more `1, 2, 4, 8, 16, 32, 64`
+  validation sequences. When more than one is present, the final sequence is
+  authoritative for restart alignment. A recording with no EDF validation is
+  accepted only through the guarded partial-cycle late-start path described in
+  step 4.
 - After validation events are removed, alignment triggers are only `63` and
   `64`, and `64` occurs in runs of exactly four.
 - The EDF and HD-EEG contain compatible repeated canonical cycles of exactly
   50 triggers.
 - The EDF scalp sampling rate is an integer multiple of the EDF trigger-channel
   sampling rate.
-- HD-EEG labels match the Stanford mapping in step 5. The EDF contains exactly
-  one each of `Fp1`, `Fp2`, `F3`, `F4`, `C3`, `C4`, `O1`, `O2`, `E1`, `E2`,
-  `M1`, and `M2` for step 8, plus the `E2:M1`, `E1:M2`, and `E2:M2` channels
-  required by the final EOG check.
+- Each required mapped HD-EEG source label in step 5 occurs exactly once. The
+  EDF contains exactly one each of `Fp1`, `Fp2`, `F3`, `F4`, `C3`, `C4`, `O1`,
+  `O2`, `E1`, `E2`, `M1`, and `M2` for step 8, plus the `E2:M1`, `E1:M2`, and
+  `E2:M2` channels required by the final EOG check.
 
-These are executable assertions, not general EDF requirements. A recording
-with different sampling rates, trigger-value ranges, trigger codes, or channel
-labels requires a deliberate code update and corresponding tests.
+These are current input contracts, with most enforced by executable assertions;
+the duplicate-HD-label caveat is noted under current limitations. They are not
+general EDF requirements. A recording with different sampling rates,
+trigger-value ranges, trigger codes, or channel labels requires a deliberate
+code update and corresponding tests.
 
 </details>
 
 ## Expected data layout
 
-Run the pipeline from the repository root. The current path construction expects
-the following subject-level layout:
+Run the pipeline from the repository root. `SleepEEG_addpath(matlabroot)`
+selects the external subject-data root; beneath that root, the current path
+construction expects:
 
 ```text
-sleeplab_trigger_alignment/
-├── align_recordings.m
-├── helper_functions/
-├── tests/
+<data root returned by SleepEEG_addpath>/
 └── <subject_code>/
     ├── set/
     │   └── <subject_code>_sleep_ds500_Z3.set
     └── clinical/
-        └── <clinical recording>.edf
+        └── <subject_code>.edf
 ```
 
-The only subject-data directory currently ignored is `sas_023/`. Add an ignore
-rule for any new subject directory **before** placing recording data inside the
-repository; subject data should not be committed.
+On the current macOS configuration, that data root is
+`~/Dropbox/Active_projects/EEG/data`. Subject recordings are external to this
+repository and should not be copied into the checkout.
 
 ## Running the pipeline
 
-1. Open [`align_recordings.m`](align_recordings.m).
-2. Update the subject code, trigger-channel label, clinical EDF filename, and
-   external `addpath` locations near the top of the file.
-3. In MATLAB, change into the repository root and run:
+1. Confirm that the external lab-code paths near the top of
+   [`align_recordings.m`](align_recordings.m) match your checkout.
+2. Confirm that the paired files follow the subject layout above.
+3. In MATLAB, change into the repository root and pass the subject code as a
+   row character vector. The optional trigger channel must use the same text
+   type:
 
 ```matlab
 cd('/path/to/sleeplab_trigger_alignment')
-align_recordings
+align_recordings('sas_001')                  % defaults to TcPPG
+
+% Or keep the figures open for interactive review:
+figure_cleanup = align_recordings('sas_001', 'TcPPG');
+% ...review figures...
+clear figure_cleanup
 ```
 
-The function prints a ten-step progress checklist, saves diagnostic PNGs in the
-subject's `clinical` directory, writes the aligned EDF there, and closes the
-figures when the run ends.
-
-> **Current interface note:** the values of `subject_code` and `trig_channel`
-> passed as function arguments are presently overwritten by the defaults near
-> the top of `align_recordings.m`. Edit those defaults before running; do not
-> rely on `align_recordings(subject_code, trig_channel)` to select a subject yet.
+The function prints a ten-step progress checklist, writes a timestamped log,
+saves diagnostic PNGs in the subject's `clinical` directory, and writes the
+aligned EDF there. With no captured output, the figures close before the
+function returns. Capturing `figure_cleanup` keeps them open until that value is
+cleared.
 
 ## Pipeline, step by step
 
@@ -237,6 +246,11 @@ For HD-EEG events it:
 - normalizes event types to stripped strings;
 - removes impedance events and EEGLAB `boundary` events;
 - verifies and removes the initial `1, 2, 4, 8, 16, 32, 64` validation sequence;
+- removes amplifier disconnect/reconnect codes `9001` and `9002` from the
+  canonical trigger stream while retaining their raw text, original event
+  indices and latencies, and surrounding trigger anchors in an interruption
+  table; marker order is validated, with a trailing disconnect recorded as
+  `missing_reconnect`;
 - requires all remaining events to be `63` or `64`; and
 - requires each retained run of `64` events to contain exactly four triggers.
 
@@ -248,7 +262,7 @@ EDF loader:
 | Trigger code | Accepted peak range |
 | ---: | ---: |
 | `1` | 5–6 |
-| `2` | 11–12 |
+| `2` | 11–12.1 |
 | `4` | 18–19 |
 | `8` | 24–25 |
 | `16` | 30–31 |
@@ -258,8 +272,10 @@ EDF loader:
 Stable 63-to-64 transitions that arrived as one above-threshold chunk are split
 before classification when both value-range runs contain at least three samples.
 The extractor also resolves the validation sequence's ambiguous sixth pulse as
-`32`, removes unmapped orphan chunks, removes all validation occurrences, and
-discards malformed `64` runs.
+`32`, removes unmapped orphan chunks, records and removes every validation
+occurrence, and discards malformed `64` runs. Zero EDF validation sequences are
+permitted; when sequences are present, metadata identifies the final one as the
+authoritative validation boundary.
 
 Trigger times in both systems use MATLAB's one-based sample convention:
 
@@ -279,10 +295,10 @@ clinical EDF, and overlaid inter-trigger intervals is plotted.
 [`extract_canonical_cycle.m`](helper_functions/extract_canonical_cycle.m) for
 each system. Runs of four `64` events define candidate cycle boundaries. Among
 bounded chunks, the most frequently repeated trigger-type and interval
-structure becomes the canonical cycle. The first retained events must begin at
-a four-`64` boundary, at least three intact boundaries must be present, the
-selected structure must repeat at least twice, and ties between distinct
-structures are rejected.
+structure becomes the canonical cycle. At least three intact boundaries must be
+present, the selected structure must repeat at least twice, and ties between
+distinct structures are rejected. HD-EEG must begin at an intact boundary; EDF
+may instead contain a guarded leading partial cycle.
 
 The EEG and EDF canonical cycles must each contain exactly 50 triggers with the
 same types and interval timing within a shared tolerance:
@@ -298,6 +314,24 @@ data before a trigger-box restart, and the terminal relationship between the
 recordings. Supported gaps are bracketed by trustworthy trigger anchors;
 ambiguous loss that cannot be resolved safely stops or requires re-locking.
 
+For a true EDF late start without a validation sequence, the leading events must
+be only `63` triggers and provide at least two consecutive intervals that match
+one unique suffix of both the EDF canonical cycle and HD-EEG cycle 1. The first
+matched `63` source pair becomes the initial anchor. Ambiguous phase, insufficient
+evidence, or disagreement fails explicitly. When a final EDF validation sequence
+follows earlier regular triggers, those earlier events are marked pre-alignment,
+the first complete post-validation cycle must match HD-EEG cycle 1, and its first
+regular `64` becomes the restart anchor.
+
+Each paired `9001`/`9002` amplifier interruption is audited against EDF timing.
+A single affected interval is retained only when it remains within tolerance;
+supported mismatched or multi-interval brackets are excluded only when their
+anchors map safely and a post-reconnect interval confirms re-locking. Ambiguous
+or inconsistent evidence requires manual review or fails explicitly rather than
+being resolved by guessing an offset. A final disconnect without a reconnect is
+treated as terminal EEG loss when its pre-disconnect anchor maps safely to EDF,
+ending the trusted segment at that anchor.
+
 With plotting enabled, the matcher shows the original HD-EEG trigger timeline,
 the HD-EEG timeline shifted to the initial EDF anchor, and the EDF timeline.
 Unsafe intervals and terminal padding/truncation are marked on the plot.
@@ -310,8 +344,10 @@ Unsafe intervals and terminal padding/truncation are marked on the plot.
 [`extract_segments.m`](helper_functions/extract_segments.m) reconstructs the
 matched trigger intervals from the matcher's comparison history. Consecutive
 paired intervals become one segment; discontinuities in either system begin a
-new segment. The resulting table includes inclusive EEG and EDF start/end
-samples, durations, source chunk/interval identifiers, and clock-drift metrics.
+new segment. Intervals flagged as unsafe by amplifier-interruption handling are
+excluded even if their trigger timing otherwise matches. The resulting table
+includes inclusive EEG and EDF start/end samples, durations, source
+chunk/interval identifiers, and clock-drift metrics.
 
 For every segment, cumulative
 
@@ -414,6 +450,10 @@ anti-aliasing design produces a 315-tap symmetric kernel. Very-low-frequency
 high-pass transients can extend roughly 50–60 seconds from a segment edge, which
 is important when interpreting short segments.
 
+During this stage, the entry point reports each channel's high-pass filtering
+and approximately 10% progress milestones for the exact-grid resampling of each
+segment.
+
 Because the entry point enables sanity plots, each segment also produces a
 5-by-2 trace comparison for the eight scalp and two HD mastoid source
 channels: the mean-centered, high-pass, anti-alias-filtered signal on the input
@@ -467,10 +507,10 @@ loaded.
 [`quantize_edf_data.m`](helper_functions/quantize_edf_data.m) assigns
 `physical_min = -1800` and `physical_max = 1800` uV to `E1`, `E2`, `M1`, `M2`,
 `Fp1`, `Fp2`, `F3`, `F4`, `C3`, `C4`, `O1`, and `O2`. It verifies that these
-channels already share valid digital limits, then rounds and clamps the
-clinical `E1`, `E2`, `M1`, and `M2` samples onto the new grid. The existing
-eight scalp cells are not requantized because they are overwritten
-immediately afterward.
+channels declare physical dimension `uV` and already share identical, valid
+int16 digital limits, then rounds and clamps the clinical `E1`, `E2`, `M1`, and
+`M2` samples onto the new grid. The existing eight scalp cells are not
+requantized because they are overwritten immediately afterward.
 
 [`substitute_eeg_data.m`](helper_functions/substitute_eeg_data.m) writes each
 grounded scalp row as an aligned HD-EEG derivation plus the requantized
@@ -557,7 +597,12 @@ With plotting enabled throughout the current entry point, it opens:
 These figures are saved automatically as step-numbered alignment-check PNGs in
 the subject's `clinical` directory. Figures within the same step include an
 execution-order index so alphabetical sorting preserves their intended order;
-per-segment resampling filenames also include a zero-padded segment number.
+per-segment resampling filenames also include a zero-padded segment number. The
+current filename tails after the common `<subject_code>_alignment_check_` prefix
+are `step3_clinical_c3_trigger`, `step4_1_trigger_intervals`,
+`step4_2_trigger_alignment`, `step4_3_clock_drift`, `step6_segNN_1_trace`,
+`step6_segNN_2_spectrum`, `step8_scalp_substitution`, `step9_1_spectrogram`, and
+`step9_2_eog`, each followed by `.png`.
 
 </details>
 
@@ -579,9 +624,12 @@ blockEdfWrite(edfFN, header_all, signalHeader_final, signalCell_final);
 When its output is captured, `align_recordings` returns cleanup guards that keep
 the QA figures open until that output is cleared. With no captured output, its
 figures close before the function returns. Its durable outputs are the aligned
-EDF, alignment log, and step-numbered alignment-check PNGs. If a target filename
-already exists, treat the run as an overwrite operation and preserve any earlier
-result you need before rerunning.
+EDF, `<subject_code>_alignment_YYYYMMDD_HHMMSS.log`, and step-numbered
+alignment-check PNGs. If the aligned EDF already exists, the writer writes over
+it in place. PNG names do not include the log's run timestamp, so archive or
+remove the earlier `<subject_code>_alignment_check_*.png` set before rerunning;
+otherwise plots for segments not produced by the new run can remain beside the
+new files.
 
 </details>
 
@@ -605,13 +653,19 @@ result you need before rerunning.
 
 ## Current limitations
 
-- Subject selection, the clinical EDF basename, plotting, and lab-code paths are
-  hard-coded rather than exposed as a working configuration interface.
+- Both text inputs must currently be MATLAB row character vectors, as in
+  `align_recordings('sas_001', 'TcPPG')`. A string-scalar `subject_code` is not
+  normalized before filename construction, and a string-scalar `trig_channel`
+  fails the external loader's cell-string check. The `.set` and clinical EDF
+  basenames are fixed from the subject code. Plotting and the external lab-code
+  paths remain hard-coded.
 - The top-level function does not stop solely because the matcher reports that
-  later data require re-locking; it can write the earlier trustworthy segments
-  and leave later aligned montage derivations at zero, using the clinical
-  mastoid compensation described above in the stored grounded rows. Review the
-  alignment plot and segment table.
+  nonterminal data require re-locking; it can write the earlier trustworthy
+  segments and leave later aligned montage derivations at zero, using the
+  clinical mastoid compensation described above in the stored grounded rows.
+  Review the alignment plot and segment table. A terminal region without a
+  preceding lock, or with disagreeing trigger correspondence, fails explicitly;
+  supported shorter/longer terminal cases still anchor and pad or truncate.
 - HD-EEG and EDF replacement channels are assumed to use compatible physical
   units. No unit conversion is performed. The 12 direct montage channels use
   a fixed +/-1800 uV physical range, while their existing common digital limits
@@ -620,22 +674,31 @@ result you need before rerunning.
 - Other signal-header fields, including transducer and prefilter descriptions,
   also remain those of the original clinical channels and may not describe the
   substituted HD-EEG source.
-- The function returns no match-result structure and does not save its figures
-  or segment table.
+- HD-EEG channel lookup does not currently reject duplicate source labels. Each
+  mapped Stanford label must therefore occur exactly once in `EEG.chanlocs`.
+- The aligned EDF is written directly to its final path. The external writer
+  does not compare its `fwrite` counts with the expected counts, and the entry
+  point does not request or check writer status before reporting completion.
+  Preserve any prior aligned output and verify the new file in the intended
+  viewer.
+- The function does not return or serialize the match-result structure or
+  segment table as MATLAB data. Their printed diagnostics are captured in the
+  timestamped alignment log; the only MATLAB return is the figure-cleanup cell.
 - Tests exercise the helpers with synthetic fixtures, but there is no automated
   end-to-end test of `align_recordings.m` on a complete paired recording.
 
 ## Tests
 
 The unit tests use primarily synthetic fixtures and cover canonical-cycle
-inference, trigger loss and restart cases, terminal alignment, segment
+inference, guarded EDF partial-cycle starts, final-validation restarts,
+`9001`/`9002` amplifier interruptions, trigger loss, terminal alignment, segment
 construction and linear-drift validation, exact EDF-grid resampling, filter
-response, zero padding, shared-grid quantization, channel substitution, and QA
-plots.
+response, zero padding, shared-grid quantization, channel substitution, QA
+plots, and PNG export naming.
 
-One matcher test optionally uses an ignored, subject-specific trigger-event
-fixture. MATLAB marks that test incomplete when the fixture is absent from a
-clean checkout; the remaining tests do not require subject data.
+One matcher regression uses the tracked, trigger-event-only fixture
+`tests/sas_023_trigger_event_tables.mat`. Raw subject recordings and subject
+directories are not required to run the suite.
 
 From the repository root:
 
