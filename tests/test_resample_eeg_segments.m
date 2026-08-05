@@ -274,7 +274,7 @@ visibility_cleanup = onCleanup(@() set( ...
 set(groot, 'defaultFigureVisible', 'off')
 figures_before = findall(groot, 'Type', 'figure');
 
-resampled = resample_eeg_segments( ...
+[resampled, sanity_figure_handles] = resample_eeg_segments( ...
     eeg_segment_data, matched_segments, edf_input, true);
 
 verifySize(testCase, resampled{1}, [11 8193])
@@ -282,14 +282,21 @@ verifySize(testCase, resampled{1}, [11 8193])
 figures_after = findall(groot, 'Type', 'figure');
 new_figures = setdiff(figures_after, figures_before);
 figure_cleanup = onCleanup(@() delete(new_figures));
-time_figure = findobj( ...
-    new_figures, 'flat', 'Tag', 'resample_time_trace_comparison');
-spectrum_figure = findobj( ...
-    new_figures, 'flat', 'Tag', 'resample_welch_spectra');
+spectrum_axes = findall( ...
+    new_figures, 'Type', 'axes', ...
+    'Tag', 'resample_welch_spectrum_axes');
+spectrum_figure = ancestor(spectrum_axes, 'figure');
+time_figure = setdiff(new_figures, spectrum_figure);
 
 verifyNumElements(testCase, new_figures, 2)
 verifyNumElements(testCase, time_figure, 1)
 verifyNumElements(testCase, spectrum_figure, 1)
+verifyEqual(testCase, sanity_figure_handles.trace, time_figure)
+verifyEqual(testCase, sanity_figure_handles.spectrum, spectrum_figure)
+for figure_i = 1:numel(new_figures)
+    verifyEmpty(testCase, new_figures(figure_i).Name)
+    verifyEmpty(testCase, new_figures(figure_i).Tag)
+end
 
 trace_axes = findall(time_figure, 'Type', 'axes');
 verifyNumElements(testCase, trace_axes, 10)
@@ -305,6 +312,11 @@ input_index = (common_quarter_second - 4 * trace_start_sec) * ...
 resampled_index = (common_quarter_second - 4 * trace_start_sec) * ...
     (edf_Fs / 4) + 1;
 for axis_i = 1:numel(trace_axes)
+    verifyEqual(testCase, ...
+        char(trace_axes(axis_i).InteractionOptions.DatatipsSupported), ...
+        'off')
+    verifyEqual(testCase, ...
+        char(trace_axes(axis_i).InteractionOptions.ZoomSupported), 'on')
     trace_lines = findall(trace_axes(axis_i), 'Type', 'line');
     verifyNumElements(testCase, trace_lines, 2)
     verifyEqual(testCase, sort([trace_lines.LineWidth]), [0.75 1.25])

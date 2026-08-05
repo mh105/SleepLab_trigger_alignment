@@ -1,7 +1,9 @@
-function [eeg_input, edf_input] = extract_triggers(eeg_input, edf_input, plot_intervals)
+function [eeg_input, edf_input, figure_handle] = ...
+    extract_triggers(eeg_input, edf_input, plot_intervals)
 if nargin < 3
     plot_intervals = false;
 end
+figure_handle = gobjects(0);
 
 %% Compute the total durations
 eeg_input.dur_hr = eeg_input.EEG.pnts / eeg_input.Fs / (60*60);
@@ -276,7 +278,7 @@ eeg_input.trig_diff_sec = eeg_trig_diff_sec;
 edf_input.trig_diff_sec = edf_trig_diff_sec;
 
 if plot_intervals
-    figure
+    figure_handle = figure;
 
     ax1 = subplot(3,1,1);
     plot(eeg_trig_diff_sec, '-o', 'Linewidth', 1)
@@ -300,7 +302,11 @@ if plot_intervals
     ylabel('Duration (sec)')
     xlabel('Trigger difference interval index')
 
-    linkaxes([ax1, ax2, ax3], 'xy')
+    axes_handles = [ax1, ax2, ax3];
+    for axes_i = 1:numel(axes_handles)
+        axes_handles(axes_i).InteractionOptions.DatatipsSupported = 'off';
+    end
+    linkaxes(axes_handles, 'xy')
 end
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

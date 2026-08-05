@@ -156,6 +156,35 @@ verifyEqual(testCase, interruption.eeg_end_anchor_event_index, 4)
 verifyEqual(testCase, interruption.eeg_end_anchor_latency, 4001)
 end
 
+function testOptionalIntervalPlotDisablesDatatips(testCase)
+[eeg_input, edf_input] = build_inputs([], strings(0, 1));
+
+original_visibility = get(groot, 'defaultFigureVisible');
+visibility_cleanup = onCleanup(@() set( ...
+    groot, 'defaultFigureVisible', original_visibility));
+set(groot, 'defaultFigureVisible', 'off')
+figures_before = findall(groot, 'Type', 'figure');
+
+extract_triggers(eeg_input, edf_input, true);
+
+figures_after = findall(groot, 'Type', 'figure');
+new_figures = setdiff(figures_after, figures_before);
+figure_cleanup = onCleanup(@() delete(new_figures));
+verifyNumElements(testCase, new_figures, 1)
+verifyEmpty(testCase, new_figures.Name)
+verifyEmpty(testCase, new_figures.Tag)
+
+axes_handles = findall(new_figures, 'Type', 'axes');
+verifyNumElements(testCase, axes_handles, 3)
+for axes_i = 1:numel(axes_handles)
+    verifyEqual(testCase, ...
+        char(axes_handles(axes_i).InteractionOptions.DatatipsSupported), ...
+        'off')
+    verifyEqual(testCase, ...
+        char(axes_handles(axes_i).InteractionOptions.ZoomSupported), 'on')
+end
+end
+
 function testMultiplePairsInOneIntervalRemainSeparate(testCase)
 [eeg_input, edf_input] = build_inputs( ...
     [2201; 2301; 2401; 2501], [ ...

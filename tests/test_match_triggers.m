@@ -1077,13 +1077,23 @@ edf.dur_hr = 2.7;
 
 [result, eeg_output, edf_output] = match_triggers(eeg, edf, true);
 
-figure_handle = findobj(groot, ...
-    'Type', 'figure', 'Tag', 'match_trigger_alignment');
+ax_original = findobj(groot, ...
+    'Type', 'axes', 'Tag', 'original_eeg_timeline');
+figure_handle = ancestor(ax_original, 'figure');
 verifyNumElements(testCase, figure_handle, 1)
-ax_original = findobj(figure_handle, 'Tag', 'original_eeg_timeline');
 ax_aligned = findobj(figure_handle, 'Tag', 'aligned_eeg_timeline');
 ax_edf = findobj(figure_handle, 'Tag', 'edf_timeline');
 verifyNumElements(testCase, [ax_original; ax_aligned; ax_edf], 3)
+verifyEmpty(testCase, figure_handle.Name)
+verifyEmpty(testCase, figure_handle.Tag)
+axes_handles = [ax_original; ax_aligned; ax_edf];
+for axes_i = 1:numel(axes_handles)
+    verifyEqual(testCase, ...
+        char(axes_handles(axes_i).InteractionOptions.DatatipsSupported), ...
+        'off')
+    verifyEqual(testCase, ...
+        char(axes_handles(axes_i).InteractionOptions.ZoomSupported), 'on')
+end
 
 original_match = find_chunk_trace(ax_original, 1);
 aligned_match = find_chunk_trace(ax_aligned, 1);
@@ -1167,9 +1177,9 @@ edf.dur_hr = 2.6;
 
 [result, ~, ~] = match_triggers(eeg, edf, true);
 
-figure_handle = findobj(groot, ...
-    'Type', 'figure', 'Tag', 'match_trigger_alignment');
-ax_original = findobj(figure_handle, 'Tag', 'original_eeg_timeline');
+ax_original = findobj(groot, ...
+    'Type', 'axes', 'Tag', 'original_eeg_timeline');
+figure_handle = ancestor(ax_original, 'figure');
 ax_aligned = findobj(figure_handle, 'Tag', 'aligned_eeg_timeline');
 drop_bars = findall(ax_aligned, 'Tag', 'terminal_drop');
 verifyNumElements(testCase, drop_bars, 1)
@@ -1210,14 +1220,22 @@ end
 function [visibility_cleanup, figure_cleanup] = ...
     prepare_hidden_alignment_figure
 
-close(findobj(groot, 'Type', 'figure', 'Tag', 'match_trigger_alignment'))
+close_alignment_figure
 previous_visibility = get(groot, 'DefaultFigureVisible');
 set(groot, 'DefaultFigureVisible', 'off')
 visibility_cleanup = onCleanup( ...
     @() set(groot, 'DefaultFigureVisible', previous_visibility));
-figure_cleanup = onCleanup( ...
-    @() close(findobj( ...
-        groot, 'Type', 'figure', 'Tag', 'match_trigger_alignment')));
+figure_cleanup = onCleanup(@close_alignment_figure);
+
+end
+
+function close_alignment_figure
+
+alignment_axes = findobj( ...
+    groot, 'Type', 'axes', 'Tag', 'original_eeg_timeline');
+if ~isempty(alignment_axes)
+    close(ancestor(alignment_axes, 'figure'))
+end
 
 end
 

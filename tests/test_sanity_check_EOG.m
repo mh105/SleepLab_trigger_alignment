@@ -24,7 +24,8 @@ figure_handle = sanity_check_EOG( ...
     signalHeader_final, signalCell_final, edf_Fs);
 figure_cleanup = onCleanup(@() delete(figure_handle));
 
-verifyEqual(testCase, figure_handle.Tag, 'sanity_check_EOG')
+verifyEmpty(testCase, figure_handle.Name)
+verifyEmpty(testCase, figure_handle.Tag)
 axes_handles = findall( ...
     figure_handle, 'Type', 'axes', ...
     'Tag', 'sanity_check_EOG_axes');

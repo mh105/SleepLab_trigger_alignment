@@ -159,15 +159,19 @@ signalCell_final = substitute_eeg_data( ...
 figures_after = findall(groot, 'Type', 'figure');
 new_figures = setdiff(figures_after, figures_before);
 figure_cleanup = onCleanup(@() delete(new_figures));
-figure_handle = findobj( ...
-    new_figures, 'flat', ...
-    'Tag', 'substitute_eeg_data_sanity_check');
+figure_handle = new_figures;
 
 verifyNumElements(testCase, new_figures, 1)
 verifyNumElements(testCase, figure_handle, 1)
+verifyEmpty(testCase, figure_handle.Name)
+verifyEmpty(testCase, figure_handle.Tag)
 ax = findall(figure_handle, 'Type', 'axes', ...
     'Tag', 'substitute_eeg_data_sanity_axes');
 verifyNumElements(testCase, ax, 1)
+verifyEqual(testCase, ...
+    char(ax.InteractionOptions.DatatipsSupported), 'off')
+verifyEqual(testCase, ...
+    char(ax.InteractionOptions.ZoomSupported), 'on')
 verifyEqual(testCase, ax.YLim, [-2300, 2300])
 verifyEqual(testCase, ax.FontSize, 14)
 verifyEqual(testCase, ax.Title.FontSize, 18)

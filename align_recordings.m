@@ -12,6 +12,7 @@ end
 close all; clear all; clc
 subject_code='sas_001';
 trig_channel='TcPPG';
+figure_cleanup = onCleanup(@() close('all'));
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -24,6 +25,8 @@ addpath('helper_functions')
 fpath = SleepEEG_addpath(matlabroot);
 fn_eeg = fullfile(fpath, subject_code, 'set', [subject_code '_sleep_ds500_Z3.set']);
 fn_edf = fullfile(fpath, subject_code, 'clinical', [subject_code, '.edf']);
+clinical_directory = fileparts(fn_edf);
+% Alignment-check plot numbers identify plot types, not figure instances.
 
 progress_steps = { ...
     'EDF trigger channel loaded'; ...
@@ -73,17 +76,15 @@ mark_step_done(2);
 c3_index = strcmp({signalHeader_all.signal_labels}, 'C3');
 edf_Fs = signalHeader_all(c3_index).samples_in_record / header_all.data_record_duration;
 
+% Compare native clinical C3 and trigger signals before alignment
+sanity_figure_handle = sanity_plot_EDF_data( ...
+    signalCell_all{c3_index}, signalCell{1}, edf_Fs, trigger_Fs);
+save_alignment_check_plot( ...
+    sanity_figure_handle, clinical_directory, subject_code, 1);
+
 % assert the EDF sampling rate
 assert(edf_Fs == 256, 'EDF sampling rate is different from 256Hz.')
 mark_step_done(3);
-
-% t_trigger = (0:length(signalCell{1})-1) / 128;
-% t_EEG = (0:length(signalCell_all{c3_index})-1) / 256;
-% 
-% figure;
-% hold on
-% plot(t_EEG, signalCell_all{c3_index})
-% plot(t_trigger, signalCell{1})
 
 %% Extract triggers from the two files and match by trigger intervals
 % Create two structs to hold useful variables
@@ -95,20 +96,29 @@ eeg_input.EEG = EEG;
 eeg_input.Fs = eeg_Fs;
 
 % a) extract triggers from the HD-EEG events and EDF trigger channel
-[eeg_input, edf_input] = extract_triggers(eeg_input, edf_input, true);
+[eeg_input, edf_input, sanity_figure_handle] = ...
+    extract_triggers(eeg_input, edf_input, true);
+save_alignment_check_plot( ...
+    sanity_figure_handle, clinical_directory, subject_code, 2);
 
 % b) match trigger intervals between the two systems
-[trigger_match_result, eeg_input, edf_input] = match_triggers(eeg_input, edf_input, true);
+[trigger_match_result, eeg_input, edf_input, sanity_figure_handle] = ...
+    match_triggers(eeg_input, edf_input, true);
+save_alignment_check_plot( ...
+    sanity_figure_handle, clinical_directory, subject_code, 3);
 
 % c) extract continuous matched-up segments based on matched-up trigger intervals
-matched_segments = extract_segments(trigger_match_result, eeg_input, edf_input, true);
+[matched_segments, sanity_figure_handle] = ...
+    extract_segments(trigger_match_result, eeg_input, edf_input, true);
+save_alignment_check_plot( ...
+    sanity_figure_handle, clinical_directory, subject_code, 4);
 mark_step_done(4);
 
 %% Truncate relevant HD-EEG channels to within segment sample bounds
 edf_eeg_channel_names = {'Fp1', 'Fp2', 'F3', 'F4', 'C3', 'C4', 'O1', 'O2'};
 % HD-EEG M1/M2 are retained only as reference sources. Clinical E1, E2,
 % M1, and M2 retain their recorded signals but are requantized below.
-% VEOGL is retained for QA.
+% VEOGL is retained for QC sanity check plot at the end.
 aligned_eeg_channel_names = [edf_eeg_channel_names, {'M1', 'M2', 'VEOGL'}];
 eeg_input.aligned_eeg_channel_names = aligned_eeg_channel_names;
 eeg_segment_data = truncate_eeg_segments(matched_segments, eeg_input);
@@ -118,7 +128,19 @@ mark_step_done(5);
 % Treat the EDF clock as the reference and estimate the effective HD-EEG
 % sampling rate separately for each continuous matched segment.
 edf_input.aligned_eeg_channel_names = aligned_eeg_channel_names;
-resampled_eeg_segment_data = resample_eeg_segments(eeg_segment_data, matched_segments, edf_input, true);
+[resampled_eeg_segment_data, resampling_figure_handles] = ...
+    resample_eeg_segments( ...
+        eeg_segment_data, matched_segments, edf_input, true);
+for segment_i = 1:height(matched_segments)
+    save_alignment_check_plot( ...
+        resampling_figure_handles.trace(segment_i), ...
+        clinical_directory, subject_code, 5, ...
+        sprintf('seg%d_trace', segment_i));
+    save_alignment_check_plot( ...
+        resampling_figure_handles.spectrum(segment_i), ...
+        clinical_directory, subject_code, 6, ...
+        sprintf('seg%d_spect', segment_i));
+end
 mark_step_done(6);
 
 %% Concatenate with zero padding to the same length as the entire EDF length
@@ -130,16 +152,26 @@ mark_step_done(7);
 % Put all direct montage channels on one EDF voltage grid, then prepare the
 % 8 grounded scalp signals using the requantized clinical mastoids.
 [signalHeader_final, signalCell_final] = quantize_edf_data(signalHeader_all, signalCell_all);
-signalCell_final = substitute_eeg_data(aligned_eeg_data, aligned_eeg_channel_names, ...
+[signalCell_final, sanity_figure_handle] = ...
+    substitute_eeg_data(aligned_eeg_data, aligned_eeg_channel_names, ...
     edf_eeg_channel_names, signalHeader_final, signalCell_final, true);
+save_alignment_check_plot( ...
+    sanity_figure_handle, clinical_directory, subject_code, 7);
 mark_step_done(8);
 
 %% Final sanity check plots
 % a) Compare native C3:M2 with C3:M2 reconstructed from grounded EDF rows
-sanity_check_spectrogram(EEG, header_all, signalHeader_final, signalCell_final);
+sanity_figure_handle = sanity_check_spectrogram( ...
+    EEG, header_all, signalHeader_final, signalCell_final);
+save_alignment_check_plot( ...
+    sanity_figure_handle, clinical_directory, subject_code, 8);
 
 % b) Compare referenced HD-EEG and clinical EOG signals
-sanity_check_EOG(aligned_eeg_data, aligned_eeg_channel_names, signalHeader_final, signalCell_final, edf_Fs);
+sanity_figure_handle = sanity_check_EOG( ...
+    aligned_eeg_data, aligned_eeg_channel_names, ...
+    signalHeader_final, signalCell_final, edf_Fs);
+save_alignment_check_plot( ...
+    sanity_figure_handle, clinical_directory, subject_code, 9);
 mark_step_done(9);
 
 %% Save aligned EDF file 
@@ -147,5 +179,6 @@ edfFN = strrep(fn_edf, '.edf', '_aligned.edf');
 blockEdfWrite(edfFN, header_all, signalHeader_final, signalCell_final);
 mark_step_done(10);
 fprintf('\nAlignment complete.\n')
+close all
 
 end

@@ -1,4 +1,4 @@
-function matched_segments = extract_segments( ...
+function [matched_segments, figure_handle] = extract_segments( ...
     trigger_match_result, eeg_input, edf_input, plot_drift)
 %EXTRACT_SEGMENTS Extract maximal runs of paired trigger intervals.
 %   MATCHED_SEGMENTS = EXTRACT_SEGMENTS(RESULT, EEG_INPUT, EDF_INPUT)
@@ -14,11 +14,13 @@ function matched_segments = extract_segments( ...
 %   interval tolerance returned by MATCH_TRIGGERS.
 %   EXTRACT_SEGMENTS(..., PLOT_DRIFT) plots the cumulative EDF-minus-
 %   EEG trigger-timing difference against elapsed time for every continuous
-%   segment.
+%   segment. The optional second output is that figure handle when plotting
+%   is enabled, or an empty graphics array otherwise.
 
 if nargin < 4
     plot_drift = false;
 end
+figure_handle = gobjects(0);
 
 validate_inputs(trigger_match_result, eeg_input, edf_input)
 
@@ -194,9 +196,9 @@ disp('Continuous matched-trigger segments:')
 disp(display_report)
 
 if plot_drift
-    plot_clock_drift( ...
+    figure_handle = plot_clock_drift( ...
         segment_index, eeg_elapsed_by_segment, ...
-        cumulative_difference_by_segment)
+        cumulative_difference_by_segment);
 end
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -285,11 +287,11 @@ end
 end
 
 %%
-function plot_clock_drift( ...
+function figure_handle = plot_clock_drift( ...
     segment_index, eeg_elapsed_by_segment, ...
     cumulative_difference_by_segment)
 
-figure
+figure_handle = figure;
 ax = axes;
 hold(ax, 'on')
 for segment_i = 1:numel(segment_index)
@@ -300,6 +302,7 @@ for segment_i = 1:numel(segment_index)
         'DisplayName', "segment index " + segment_index(segment_i));
 end
 hold(ax, 'off')
+ax.InteractionOptions.DatatipsSupported = 'off';
 set(ax, 'FontSize', 16)
 xlabel(ax, 'Time within continuous segment (hr)')
 ylabel(ax, 'Cumulative EDF - EEG duration (sec)')

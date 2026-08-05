@@ -443,6 +443,8 @@ figure_cleanup = onCleanup(@() close(figure_handle));
 
 verifyEqual(testCase, ...
     numel(findall(groot, 'Type', 'figure')), figure_count_before + 1)
+verifyEmpty(testCase, figure_handle.Name)
+verifyEmpty(testCase, figure_handle.Tag)
 lines = findobj(figure_handle, 'Type', 'line');
 verifyNumElements(testCase, lines, height(report))
 verifyEqual(testCase, sort(string({lines.DisplayName})), ...
@@ -454,6 +456,10 @@ axes_handle = findobj(figure_handle, 'Type', 'axes');
 legend_handle = findobj(figure_handle, 'Type', 'legend');
 verifyNumElements(testCase, axes_handle, 1)
 verifyNumElements(testCase, legend_handle, 1)
+verifyEqual(testCase, ...
+    char(axes_handle.InteractionOptions.DatatipsSupported), 'off')
+verifyEqual(testCase, ...
+    char(axes_handle.InteractionOptions.ZoomSupported), 'on')
 verifyEqual(testCase, axes_handle.FontSize, 16)
 verifyEqual(testCase, axes_handle.Title.FontSize, 24)
 verifyEqual(testCase, legend_handle.FontSize, 20)

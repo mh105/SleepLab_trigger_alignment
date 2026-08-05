@@ -24,20 +24,27 @@ verifyWarningFree(testCase, @() sanity_check_spectrogram( ...
     EEG, header_final, signalHeader_final, signalCell_final))
 figures_after = findall(groot, 'Type', 'figure');
 new_figures = setdiff(figures_after, figures_before);
-figure_handle = findobj( ...
-    new_figures, 'flat', 'Tag', 'sanity_check_spectrogram');
+figure_handle = new_figures;
 figure_cleanup = onCleanup(@() delete(figure_handle));
 
 verifyNumElements(testCase, new_figures, 1)
 verifyNumElements(testCase, figure_handle, 1)
-verifyEqual(testCase, figure_handle.Tag, ...
-    'sanity_check_spectrogram')
+verifyEmpty(testCase, figure_handle.Name)
+verifyEmpty(testCase, figure_handle.Tag)
 native_axes = findall(figure_handle, 'Type', 'axes', ...
     'Tag', 'sanity_check_spectrogram_native_axes');
 aligned_axes = findall(figure_handle, 'Type', 'axes', ...
     'Tag', 'sanity_check_spectrogram_aligned_axes');
 verifyNumElements(testCase, native_axes, 1)
 verifyNumElements(testCase, aligned_axes, 1)
+axes_handles = [native_axes; aligned_axes];
+for axes_i = 1:numel(axes_handles)
+    verifyEqual(testCase, ...
+        char(axes_handles(axes_i).InteractionOptions.DatatipsSupported), ...
+        'off')
+    verifyEqual(testCase, ...
+        char(axes_handles(axes_i).InteractionOptions.ZoomSupported), 'on')
+end
 verifyGreaterThan(testCase, native_axes.Position(2), ...
     aligned_axes.Position(2))
 verifyEqual(testCase, native_axes.YLim, [0, 40], 'AbsTol', 1e-12)

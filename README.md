@@ -141,8 +141,9 @@ cd('/path/to/sleeplab_trigger_alignment')
 align_recordings
 ```
 
-The function prints a ten-step progress checklist, opens diagnostic figures,
-and writes the aligned EDF beside the source clinical EDF.
+The function prints a ten-step progress checklist, saves diagnostic PNGs in the
+subject's `clinical` directory, writes the aligned EDF there, and closes the
+figures when the run ends.
 
 > **Current interface note:** the values of `subject_code` and `trig_channel`
 > passed as function arguments are presently overwritten by the defaults near
@@ -212,7 +213,9 @@ edf_Fs = signalHeader_all(c3_index).samples_in_record ...
 ```
 
 The implementation asserts `edf_Fs == 256`. The number of samples in this C3
-signal later defines the total length of the aligned EEG matrix.
+signal later defines the total length of the aligned EEG matrix. The
+[`sanity_plot_EDF_data.m`](helper_functions/sanity_plot_EDF_data.m) helper then
+plots the native clinical C3 and trigger signals on their own sampling grids.
 
 </details>
 
@@ -540,10 +543,10 @@ of samples at that signal's sampling rate.
 `VEOGL:M2` (`VEOGL - RD6`) with the unchanged exported clinical montage rows
 `E2:M1`, `E1:M2`, and `E2:M2` on a shared EDF time axis.
 
-Together with the plots enabled in steps 4, 6, and 8, the current entry point
-opens:
+With plotting enabled throughout the current entry point, it opens:
 
 - inter-trigger interval comparisons;
+- the native clinical EDF C3 and trigger channels;
 - the original/aligned/EDF trigger timeline;
 - a clock-drift plot with one trace per segment;
 - per-segment time-trace and Welch-spectrum resampling checks;
@@ -551,7 +554,10 @@ opens:
 - native-versus-aligned C3:M2 spectrograms; and
 - aligned-versus-clinical EOG traces.
 
-These figures are displayed but are **not saved automatically**.
+These figures are saved automatically as numbered alignment-check PNGs in the
+subject's `clinical` directory. Per-segment resampling traces use plot number 05,
+and per-segment spectra use plot number 06; the segment number is included in
+each filename.
 
 </details>
 
@@ -570,10 +576,11 @@ edfFN = strrep(fn_edf, '.edf', '_aligned.edf');
 blockEdfWrite(edfFN, header_all, signalHeader_final, signalCell_final);
 ```
 
-`align_recordings` returns no MATLAB value. Its durable output is the aligned
-EDF; the progress report, matched-segment table, and open figures are runtime QA
-artifacts. If the target filename already exists, treat the run as an overwrite
-operation and preserve any earlier result you need before rerunning.
+`align_recordings` returns no MATLAB value. Its durable outputs are the aligned
+EDF and numbered alignment-check PNGs; the progress report and matched-segment
+table are runtime QA artifacts. If a target filename already exists, treat the
+run as an overwrite operation and preserve any earlier result you need before
+rerunning.
 
 </details>
 

@@ -1,10 +1,12 @@
-function [result, eeg_input, edf_input] = match_triggers( ...
+function [result, eeg_input, edf_input, figure_handle] = match_triggers( ...
     eeg_input, edf_input, plot_alignment)
 %MATCH_TRIGGERS Match EEG/EDF trigger chunks and resolve supported gaps.
 %   [RESULT, EEG_INPUT, EDF_INPUT] = MATCH_TRIGGERS(EEG_INPUT, EDF_INPUT)
 %   extracts and validates each system's canonical trigger cycle before
 %   matching chunks. EEG_INPUT must contain event_table and Fs; EDF_INPUT
 %   must contain event_table and trigger_Fs.
+%   The optional fourth output is the alignment figure handle when plotting
+%   is enabled, or an empty graphics array otherwise.
 %   MATCH_TRIGGERS(..., PLOT_ALIGNMENT) creates a three-panel trigger timeline
 %   when PLOT_ALIGNMENT is true. The aligned EEG panel applies one shift that
 %   places the initial EEG anchor on the initial EDF anchor.
@@ -24,6 +26,7 @@ function [result, eeg_input, edf_input] = match_triggers( ...
 if nargin < 3
     plot_alignment = false;
 end
+figure_handle = gobjects(0);
 
 validate_system_inputs(eeg_input, edf_input)
 eeg_event_table = eeg_input.event_table;
@@ -490,7 +493,7 @@ if has_amplifier_interruptions
         'edf_start_anchor_event_index', 'edf_end_anchor_event_index'}))
 end
 if plot_alignment
-    plot_trigger_alignment(result, eeg_input, edf_input);
+    figure_handle = plot_trigger_alignment(result, eeg_input, edf_input);
 end
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -612,10 +615,7 @@ if result.terminal_chunk_handled && result.terminal_relation == "eeg_longer"
     aligned_eeg_color(first_truncated_trigger:end, :) = 1;
 end
 
-figure_handle = figure( ...
-    'Name', 'Trigger alignment timeline', ...
-    'Tag', 'match_trigger_alignment', ...
-    'Color', 'w');
+figure_handle = figure('Color', 'w');
 ax_original = subplot(3, 1, 1, 'Parent', figure_handle);
 ax_aligned = subplot(3, 1, 2, 'Parent', figure_handle);
 ax_edf = subplot(3, 1, 3, 'Parent', figure_handle);
@@ -765,6 +765,7 @@ set(ax, ...
     'Tag', tag, ...
     'YLim', trigger_y_limits, ...
     'YTick', [63, 64])
+ax.InteractionOptions.DatatipsSupported = 'off';
 title(ax, title_text, 'FontSize', 18)
 ylabel(ax, 'Trigger type')
 
