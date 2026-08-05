@@ -9,14 +9,15 @@ end
 figure_cleanup = {};
 
 %% Configuration
-addpath('~/Dropbox/Active_projects/EEG/code/sleepeeg_code')
-addpath('~/Dropbox/Active_projects/EEG/code/sleepeeg_code/helper_functions')
-addpath('~/Dropbox/Active_projects/EEG/code/ant_interface_code')
-addpath('helper_functions')
+dataDir = SleepEEG_addpath(matlabroot, 'sas');
 
-fpath = SleepEEG_addpath(matlabroot);
-fn_eeg = fullfile(fpath, subject_code, 'set', [subject_code '_sleep_ds500_Z3.set']);
-fn_edf = fullfile(fpath, subject_code, 'clinical', [subject_code, '.edf']);
+if isempty(which('extract_triggers'))
+    repo_root = fileparts(which('align_recordings'));
+    addpath(genpath(fullfile(repo_root, 'helper_functions')))
+end
+
+fn_eeg = fullfile(dataDir, subject_code, 'set', [subject_code '_sleep_ds500_Z3.set']);
+fn_edf = fullfile(dataDir, subject_code, 'clinical', [subject_code, '.edf']);
 clinical_directory = fileparts(fn_edf);
 execution_datetime = char(datetime('now', 'Format', 'yyyyMMdd_HHmmss'));
 alignment_log_file = fullfile(clinical_directory, [subject_code '_alignment_' execution_datetime '.log']);
