@@ -7,14 +7,14 @@ project_path = fileparts(fileparts(mfilename('fullpath')));
 addpath(fullfile(project_path, 'helper_functions'))
 end
 
-function testSavesPlotWithoutSuffix(testCase)
+function testSavesStepWithoutSuffix(testCase)
 [output_directory, directory_cleanup] = make_temp_directory; %#ok<ASGLU>
 figure_handle = make_hidden_figure(1);
 figure_cleanup = onCleanup(@() delete_figures(figure_handle));
 
 output_file = save_alignment_check_plot( ...
-    figure_handle, output_directory, 'sas_017', 1);
-expected_basename = 'sas_017_alignment_check_plot_01.png';
+    figure_handle, output_directory, 'sas_017', 3);
+expected_basename = 'sas_017_alignment_check_step3.png';
 expected_file = fullfile(output_directory, expected_basename);
 
 verifyEqual(testCase, output_file, expected_file)
@@ -24,7 +24,7 @@ verifyEqual(testCase, png_basenames(output_directory), ...
     string(expected_basename))
 end
 
-function testSavesFixedPlotNumbersWithSegmentSuffixes(testCase)
+function testSavesMultiplePlotsWithinStepWithSuffixes(testCase)
 [output_directory, directory_cleanup] = make_temp_directory; %#ok<ASGLU>
 figure_handles = gobjects(2, 1);
 figure_handles(1) = make_hidden_figure(1);
@@ -34,13 +34,13 @@ figure_cleanup = onCleanup( ...
 
 trace_file = save_alignment_check_plot( ...
     figure_handles(1), output_directory, ...
-    'sas_017', 5, 'seg2_trace');
+    'sas_017', 6, 'seg2_trace');
 spectrum_file = save_alignment_check_plot( ...
     figure_handles(2), output_directory, ...
     'sas_017', 6, 'seg2_spect');
 expected_basenames = [ ...
-    "sas_017_alignment_check_plot_05_seg2_trace.png"; ...
-    "sas_017_alignment_check_plot_06_seg2_spect.png"];
+    "sas_017_alignment_check_step6_seg2_trace.png"; ...
+    "sas_017_alignment_check_step6_seg2_spect.png"];
 
 verifyEqual(testCase, trace_file, ...
     fullfile(output_directory, char(expected_basenames(1))))
