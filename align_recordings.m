@@ -3,16 +3,17 @@ function [] = align_recordings(subject_code, trig_channel)
 % Assumes that you have triggers throughout the night and 
 % Last edit by Alex He 08/03/2026
 
-%%%%%%%%%%%%%%%% Change these parameters
-
-subject_code='sas_031';
-trig_channel='TcPPG';
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%
 if nargin < 2
     trig_channel = 'TcPPG';
 end
+
+%%%%%%%%%%%%%%%% Change these parameters
+
+close all; clear all; clc
+subject_code='sas_001';
+trig_channel='TcPPG';
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 %% Configuration
 addpath('~/Dropbox/Active_projects/EEG/code/sleepeeg_code')
@@ -75,6 +76,14 @@ edf_Fs = signalHeader_all(c3_index).samples_in_record / header_all.data_record_d
 % assert the EDF sampling rate
 assert(edf_Fs == 256, 'EDF sampling rate is different from 256Hz.')
 mark_step_done(3);
+
+% t_trigger = (0:length(signalCell{1})-1) / 128;
+% t_EEG = (0:length(signalCell_all{c3_index})-1) / 256;
+% 
+% figure;
+% hold on
+% plot(t_EEG, signalCell_all{c3_index})
+% plot(t_trigger, signalCell{1})
 
 %% Extract triggers from the two files and match by trigger intervals
 % Create two structs to hold useful variables
