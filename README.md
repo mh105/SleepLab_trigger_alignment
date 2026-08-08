@@ -493,10 +493,12 @@ scalp_sample = (trigger_sample - 1) * ratio + 1
 
 The helper requires an integer ratio, chronological non-overlapping segments,
 in-range bounds, and an exact agreement between each resampled segment's length
-and its converted EDF bounds. It preallocates zeros, so unmatched or unsafe
-regions are explicit in every aligned channel, including `VEOGL`. Its second
-output is a logical vector marking the same inclusive placement ranges. That
-single mask defines the samples used by both fault detection and bounds QA.
+and its converted EDF bounds. The full C3 sample count is passed explicitly as
+its final input rather than stored as an ad hoc `edf_input` field. It
+preallocates zeros, so unmatched or unsafe regions are explicit in every
+aligned channel, including `VEOGL`. Its second output is a logical vector
+marking the same inclusive placement ranges. That single mask defines the
+samples used by both fault detection and bounds QA.
 
 </details>
 
@@ -513,13 +515,14 @@ loaded.
 <summary><strong>Technical details: detection, substitution, and bounds QA</strong></summary>
 
 [`faulty_clinical_detection.m`](helper_functions/faulty_clinical_detection.m)
-examines direct `M1` and `M2` only within the logical matched-sample mask. For
-each mastoid it calculates the proportion satisfying `abs(signal) >= 1000 uV`,
-then marks the clinical system faulty only when the unrounded mean of those two
-proportions is greater than 2%. Its plain-text log report includes matched and
-total sample counts, coverage, both channel percentages, their mean, and a
-`NORMAL` or `FAULTY` status. Missing, duplicate, wrong-rate, wrong-unit,
-wrong-length, `NaN`, or `Inf` inputs fail explicitly.
+is called internally by `substitute_eeg_data`; the entry point does not pass a
+separate fault flag. It examines direct `M1` and `M2` only within the logical
+matched-sample mask. For each mastoid it calculates the proportion satisfying
+`abs(signal) >= 1000 uV`, then marks the clinical system faulty only when the
+unrounded mean of those two proportions is greater than 2%. Its plain-text log
+report includes matched and total sample counts, coverage, both channel
+percentages, their mean, and a `NORMAL` or `FAULTY` status. Missing, duplicate,
+wrong-rate, wrong-unit, wrong-length, `NaN`, or `Inf` inputs fail explicitly.
 
 [`substitute_eeg_data.m`](helper_functions/substitute_eeg_data.m) uses the
 following exact output derivations. The loaded collection remains

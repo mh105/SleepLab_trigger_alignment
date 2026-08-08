@@ -67,8 +67,7 @@ mark_step_done(3);
 
 %% Extract triggers from the two files and match by trigger intervals
 % Create two structs to hold useful variables
-edf_input.DC_trace = signalCell{1}; edf_input.trigger_Fs = trigger_Fs; edf_input.Fs = edf_Fs;
-eeg_input.EEG = EEG; eeg_input.Fs = eeg_Fs;
+[eeg_input, edf_input] = initialize_alignment_inputs(EEG, eeg_Fs, signalCell{1}, trigger_Fs, edf_Fs);
 
 % 4.1) extract triggers from the HD-EEG events and EDF trigger channel
 [eeg_input, edf_input, sanity_figure_handle] = extract_triggers(eeg_input, edf_input, true);
@@ -97,25 +96,21 @@ figure_cleanup{end + 1} = save_and_track_alignment_figure(reshape([resampling_fi
 mark_step_done(6);
 
 %% Concatenate with zero padding to the same length as the entire EDF length
-edf_input.edf_eeg_total_sample_count = numel(signalCell_all{c3_index});
-[aligned_eeg_data, matched_edf_sample_mask] = concatenate_eeg_segments(resampled_eeg_segment_data, matched_segments, edf_input, aligned_eeg_channel_names);
+[aligned_eeg_data, matched_edf_sample_mask] = concatenate_eeg_segments(resampled_eeg_segment_data, matched_segments, edf_input, aligned_eeg_channel_names, numel(signalCell_all{c3_index}));
 mark_step_done(7);
 
 %% Insert the EEG channel data into EDF file
-% Detect faulty clinical mastoids only within trustworthy matched regions.
-clinical_system_faulty = faulty_clinical_detection(signalHeader_all, signalCell_all, matched_edf_sample_mask);
-
-% Prepare the 12 final output channels without changing any EDF headers.
-[signalCell_final, sanity_figure_handle] = substitute_eeg_data(aligned_eeg_data, aligned_eeg_channel_names, edf_eeg_channel_names, signalHeader_all, signalCell_all, clinical_system_faulty, matched_edf_sample_mask, true);
+% Detect the clinical pathway and prepare 12 output channels without changing headers.
+[signalCell_final, sanity_figure_handle] = substitute_eeg_data(aligned_eeg_data, aligned_eeg_channel_names, edf_eeg_channel_names, signalHeader_all, signalCell_all, matched_edf_sample_mask, true);
 figure_cleanup{end + 1} = save_and_track_alignment_figure(sanity_figure_handle, clinical_directory, subject_code, 8, 'scalp_substitution');
 mark_step_done(8);
 
 %% Final sanity check plots
-% a) Compare native C3:M2 with C3:M2 reconstructed from grounded EDF rows
+% 9.1) Compare original HD-EEG LA2:RD6 with C3:M2 reconstructed from final ouput EDF signals
 sanity_figure_handle = sanity_check_spectrogram(EEG, header_all, signalHeader_all, signalCell_final);
 figure_cleanup{end + 1} = save_and_track_alignment_figure(sanity_figure_handle, clinical_directory, subject_code, 9, '1_spectrogram');
 
-% b) Compare referenced HD-EEG and clinical EOG signals
+% 9.2) Compare aligned HD-EEG VEOGL with original clinical EOG signals
 sanity_figure_handle = sanity_check_EOG(aligned_eeg_data, aligned_eeg_channel_names, signalHeader_all, signalCell_all, edf_Fs);
 figure_cleanup{end + 1} = save_and_track_alignment_figure(sanity_figure_handle, clinical_directory, subject_code, 9, '2_eog');
 mark_step_done(9);
