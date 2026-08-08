@@ -85,22 +85,23 @@ mark_step_done(4);
 %% Truncate relevant HD-EEG channels to within segment sample bounds
 edf_eeg_channel_names = {'Fp1', 'Fp2', 'F3', 'F4', 'C3', 'C4', 'O1', 'O2'};
 aligned_eeg_channel_names = [edf_eeg_channel_names, {'M1', 'M2', 'VEOGL'}];
+% Truncate 8 scalp EEG channels as well as analogs for M1 and M2 for re-referencing
 eeg_segment_data = truncate_eeg_segments(matched_segments, eeg_input, aligned_eeg_channel_names);
 mark_step_done(5);
 
 %% Resample HD-EEG signal into EDF sampling rate
-% Treat the EDF clock as the reference and estimate the effective HD-EEG
-% sampling rate separately for each continuous matched segment.
+% Resample each segment separately based on effective sampling rate relative to EDF clock
 [resampled_eeg_segment_data, resampling_figure_handles] = resample_eeg_segments(eeg_segment_data, matched_segments, edf_input, aligned_eeg_channel_names, true);
 figure_cleanup{end + 1} = save_and_track_alignment_figure(reshape([resampling_figure_handles.trace(:).'; resampling_figure_handles.spectrum(:).'], [], 1), clinical_directory, subject_code, 6, reshape([compose("seg%02d_1_trace", 1:height(matched_segments)); compose("seg%02d_2_spectrum", 1:height(matched_segments))], [], 1));
 mark_step_done(6);
 
-%% Concatenate with zero padding to the same length as the entire EDF length
+%% Concatenate matched segments with zero padding to the same length as the entire EDF length
+% Concatenate segments and output a within-segment mask for faulty clinical signal detection
 [aligned_eeg_data, matched_edf_sample_mask] = concatenate_eeg_segments(resampled_eeg_segment_data, matched_segments, edf_input, aligned_eeg_channel_names, numel(signalCell_all{c3_index}));
 mark_step_done(7);
 
-%% Insert the EEG channel data into EDF file
-% Detect the clinical pathway and prepare 12 output channels without changing headers.
+%% Insert the concatenated EEG channel data into EDF file
+% Detect whether clinical M1/M2 are faulty and prepare 12 output channels without changing headers.
 [signalCell_final, sanity_figure_handle] = substitute_eeg_data(aligned_eeg_data, aligned_eeg_channel_names, edf_eeg_channel_names, signalHeader_all, signalCell_all, matched_edf_sample_mask, true);
 figure_cleanup{end + 1} = save_and_track_alignment_figure(sanity_figure_handle, clinical_directory, subject_code, 8, 'scalp_substitution');
 mark_step_done(8);
