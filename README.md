@@ -5,15 +5,16 @@ clinical sleep-study EDF. The two acquisition systems share an all-night trigger
 sequence, but they have independent start times and clocks. The pipeline uses
 the shared trigger intervals to identify trustworthy continuous regions, maps
 the high-density EEG onto the **clinical EDF clock**, and writes a new EDF in
-which the direct clinical montage channels share one voltage grid and eight
-grounded scalp rows are prepared so the clinical montage displays the intended
-aligned high-density derivations.
+which 12 direct output channels retain the native clinical voltage grid and the
+clinical montage displays the intended aligned high-density derivations.
 
 [`align_recordings.m`](align_recordings.m) is the entry point. It preserves the
-clinical EDF as the output container: `E1`, `E2`, `M1`, and `M2` retain their
-recorded content after requantization, eight grounded scalp rows receive the
-aligned data, and montage derivations display zero where the aligned working
-data are zero-filled.
+clinical EDF and every signal header as the output container. When the clinical
+mastoid data are normal, `E1`, `E2`, `M1`, and `M2` retain their recorded content
+and the eight scalp rows receive clinical-mastoid-compensated aligned data. When
+the clinical mastoids are faulty, all 12 direct output rows are replaced from
+aligned HD-EEG sources. Montage-generated EDF rows remain unchanged in both
+pathways because the clinical system rebuilds its display montage after import.
 
 ## Why alignment is needed
 
@@ -37,7 +38,7 @@ flowchart LR
     E --> F["Extract trustworthy<br/>continuous segments"]
     F --> G["Filter and resample HD-EEG<br/>onto the EDF clock"]
     G --> H["Place segments on the full EDF<br/>timeline and zero-fill gaps"]
-    H --> I["Share one EDF voltage grid<br/>and prepare scalp channels"]
+    H --> I["Detect faulty clinical mastoids<br/>and prepare 12 output channels"]
     I --> J["QA figures and<br/>*_aligned.edf"]
 ```
 
@@ -54,8 +55,8 @@ The ten rows below correspond to the progress checklist printed by
 | 4 | Extract and match triggers | `extract_triggers`, `match_triggers`, `extract_segments` | Table of trustworthy continuous segments |
 | 5 | Truncate HD-EEG channels | `truncate_eeg_segments` | One channels-by-samples array per segment |
 | 6 | Resample the segments | `resample_eeg_segments` | Filtered HD-EEG on the exact EDF sample grid |
-| 7 | Rebuild the full timeline | `concatenate_eeg_segments` | EDF-length array with zeros outside matched regions |
-| 8 | Prepare direct montage channels | `quantize_edf_data`, `substitute_eeg_data` | Shared voltage grid, eight compensated scalp rows, clipping report, and trace QA |
+| 7 | Rebuild the full timeline | `concatenate_eeg_segments` | EDF-length array plus a logical mask of matched samples |
+| 8 | Prepare final output channels | `faulty_clinical_detection`, `substitute_eeg_data` | Pathway-specific 12-channel output, bounds report, and trace QA |
 | 9 | Run final sanity checks | `sanity_check_spectrogram`, `sanity_check_EOG` | Spectrogram and EOG comparison figures |
 | 10 | Write the aligned EDF | `blockEdfWrite` | `<clinical-name>_aligned.edf` |
 
@@ -104,8 +105,10 @@ fails early for most violations:
   sampling rate.
 - Each required mapped HD-EEG source label in step 5 occurs exactly once. The
   EDF contains exactly one each of `Fp1`, `Fp2`, `F3`, `F4`, `C3`, `C4`, `O1`,
-  `O2`, `E1`, `E2`, `M1`, and `M2` for step 8, plus the `E2:M1`, `E1:M2`, and
-  `E2:M2` channels required by the final EOG check.
+  `O2`, `E1`, `E2`, `M1`, and `M2`. Those 12 direct channels are 256 Hz `uV`
+  signals with common valid physical and int16 digital limits. Stored
+  `E2:M1`, `E1:M2`, and `E2:M2` rows are not required because the final EOG
+  check reconstructs those derivations from the direct rows.
 
 These are current input contracts, with most enforced by executable assertions;
 the duplicate-HD-label caveat is noted under current limitations. They are not
@@ -379,20 +382,23 @@ following exact label mapping:
 | Aligned label | Stanford HD-EEG label | Role |
 | --- | --- | --- |
 | `Fp1` | `L1` | EDF EEG |
-| `Fp2` | `R1` | EDF EEG |
+| `Fp2` | `R1` | EDF EEG; also faulty-path `E2` source |
 | `F3` | `LL2` | EDF EEG |
 | `F4` | `RR2` | EDF EEG |
 | `C3` | `LA2` | EDF EEG |
 | `C4` | `RA2` | EDF EEG |
 | `O1` | `LL11` | EDF EEG |
 | `O2` | `RR11` | EDF EEG |
-| `M1` | `LD6` | HD reference source only |
-| `M2` | `RD6` | HD reference source only |
-| `VEOGL` | `VEOGL` | QA only |
+| `M1` | `LD6` | HD reference and faulty-path `M1` source |
+| `M2` | `RD6` | HD reference and faulty-path `M2` source |
+| `VEOGL` | `VEOGL` | EOG QA and faulty-path `E1` source |
 
 The helper returns one cell per matched segment, with channels in rows and the
 inclusive range `eeg_start_sample:eeg_end_sample` in columns. Missing mapped
 labels cause an error rather than a positional fallback.
+The entry point defines `aligned_eeg_channel_names` once and passes it
+explicitly to truncation, resampling, and concatenation rather than storing the
+list as an ad hoc field in `eeg_input` or `edf_input`.
 
 </details>
 
@@ -488,71 +494,79 @@ scalp_sample = (trigger_sample - 1) * ratio + 1
 The helper requires an integer ratio, chronological non-overlapping segments,
 in-range bounds, and an exact agreement between each resampled segment's length
 and its converted EDF bounds. It preallocates zeros, so unmatched or unsafe
-regions are explicit in every aligned channel, including `VEOGL`.
+regions are explicit in every aligned channel, including `VEOGL`. Its second
+output is a logical vector marking the same inclusive placement ranges. That
+single mask defines the samples used by both fault detection and bounds QA.
 
 </details>
 
-### 8. Put direct montage channels on one grid and prepare the scalp rows
+### 8. Detect faulty clinical mastoids and prepare final output channels
 
-The clinical system imports grounded electrode values and applies its display
-montage afterward, and the participating channels must share one EDF
-calibration. The pipeline therefore requantizes the preserved clinical `E1`,
-`E2`, `M1`, and `M2` signals before preparing the eight grounded scalp rows.
+The clinical system imports direct electrode values and applies its display
+montage afterward. All 12 direct rows therefore retain their original EDF
+headers and native shared calibration; no channel is requantized or rescaled.
+The data written into those rows depend on the clinical mastoid status.
 Exported montage-generated rows and all other EDF signals remain exactly as
 loaded.
 
 <details>
-<summary><strong>Technical details: quantization and substitution</strong></summary>
+<summary><strong>Technical details: detection, substitution, and bounds QA</strong></summary>
 
-[`quantize_edf_data.m`](helper_functions/quantize_edf_data.m) assigns
-`physical_min = -1800` and `physical_max = 1800` uV to `E1`, `E2`, `M1`, `M2`,
-`Fp1`, `Fp2`, `F3`, `F4`, `C3`, `C4`, `O1`, and `O2`. It verifies that these
-channels declare physical dimension `uV` and already share identical, valid
-int16 digital limits, then rounds and clamps the clinical `E1`, `E2`, `M1`, and
-`M2` samples onto the new grid. The existing eight scalp cells are not
-requantized because they are overwritten immediately afterward.
+[`faulty_clinical_detection.m`](helper_functions/faulty_clinical_detection.m)
+examines direct `M1` and `M2` only within the logical matched-sample mask. For
+each mastoid it calculates the proportion satisfying `abs(signal) >= 1000 uV`,
+then marks the clinical system faulty only when the unrounded mean of those two
+proportions is greater than 2%. Its plain-text log report includes matched and
+total sample counts, coverage, both channel percentages, their mean, and a
+`NORMAL` or `FAULTY` status. Missing, duplicate, wrong-rate, wrong-unit,
+wrong-length, `NaN`, or `Inf` inputs fail explicitly.
 
-[`substitute_eeg_data.m`](helper_functions/substitute_eeg_data.m) writes each
-grounded scalp row as an aligned HD-EEG derivation plus the requantized
-clinical mastoid that the clinical montage will later subtract:
+[`substitute_eeg_data.m`](helper_functions/substitute_eeg_data.m) uses the
+following exact output derivations. The loaded collection remains
+`signalCell_all`; the substituted collection is returned as `signalCell_final`
+and is used for output-channel QA and EDF writing. The original
+`signalCell_all` remains available for the clinical EOG alignment check.
 
-| Grounded EDF row | Value written |
-| --- | --- |
-| `Fp1` | HD `Fp1 - M2` + clinical `M2` |
-| `Fp2` | HD `Fp2 - M1` + clinical `M1` |
-| `F3` | HD `F3 - M2` + clinical `M2` |
-| `F4` | HD `F4 - M1` + clinical `M1` |
-| `C3` | HD `C3 - M2` + clinical `M2` |
-| `C4` | HD `C4 - M1` + clinical `M1` |
-| `O1` | HD `O1 - M2` + clinical `M2` |
-| `O2` | HD `O2 - M1` + clinical `M1` |
+| EDF channel | Normal clinical pathway | Faulty clinical pathway |
+| --- | --- | --- |
+| `Fp1` | aligned `Fp1 - M2` + clinical `M2` | aligned `Fp1` |
+| `Fp2` | aligned `Fp2 - M1` + clinical `M1` | aligned `Fp2` |
+| `F3` | aligned `F3 - M2` + clinical `M2` | aligned `F3` |
+| `F4` | aligned `F4 - M1` + clinical `M1` | aligned `F4` |
+| `C3` | aligned `C3 - M2` + clinical `M2` | aligned `C3` |
+| `C4` | aligned `C4 - M1` + clinical `M1` | aligned `C4` |
+| `O1` | aligned `O1 - M2` + clinical `M2` | aligned `O1` |
+| `O2` | aligned `O2 - M1` + clinical `M1` | aligned `O2` |
+| `M1` | clinical `M1` | aligned `M1` (`LD6`) |
+| `M2` | clinical `M2` | aligned `M2` (`RD6`) |
+| `E1` | clinical `E1` | aligned `VEOGL` |
+| `E2` | clinical `E2` | aligned `Fp2` (HD source `R1`) |
 
-For example, the clinical `C3:M2` montage displays
+Thus, in the normal pathway, a clinical montage such as `C3:M2` displays
 
 ```text
-(HD C3 - HD M2 + clinical M2) - clinical M2
-    = HD C3 - HD M2, rounded to the shared EDF grid
+(aligned C3 - aligned M2 + clinical M2) - clinical M2
+    = aligned C3 - aligned M2
 ```
 
-Because the exact quantized mastoid is added to the scalp row, writing both
-signals on the same grid lets the clinical montage cancel the mastoid code.
-Every source and destination is resolved by exact name, and duplicate,
-missing, or wrong-length channels cause an error. HD `M1` and `M2` remain in
-the aligned working array only to construct these derivations; they do not
-replace the clinical mastoid rows. `VEOGL` likewise remains available only for
-the EOG check.
+In the faulty pathway, the clinical montage subtracts the replaced HD mastoid
+directly from the aligned active electrode. Because the same already-processed
+`R1` row serves both `Fp2` and `E2`, it is not filtered or resampled twice.
 
-The helper prints the percentage of prepared samples in each of the eight
-rows that falls strictly below its header's physical minimum or above its
-physical maximum. With the current shared grid, those limits are -1800 and
-1800 uV. It also defaults to showing a single full-recording trace plot with
-all eight prepared rows, y-limits extending 500 uV beyond the two header
-limits, dotted lines at those limits, and a channel legend. Reporting does not
-clamp or rescale the prepared scalp values.
+Before substitution, the helper validates that all 12 direct labels occur
+exactly once, are `uV` channels with a common samples-per-record value, and
+share valid physical and int16 digital limits. It does not modify those limits.
+After substitution, it prints a 12-row table in the fixed order `Fp1`, `Fp2`,
+`F3`, `F4`, `C3`, `C4`, `O1`, `O2`, `M1`, `M2`, `E1`, `E2`. The table records
+each channel's pathway-specific output derivation, shared physical limits, and
+the percentage strictly outside those limits within matched samples only.
+Exact boundary values are allowed; decisions use unrounded percentages even
+though the table displays three decimals.
 
-`blockEdfWrite` uses the updated headers to encode all 12 direct montage
-channels on the shared grid. The exported montage-generated rows keep their
-original headers and data.
+The step-8 figure still plots every output sample in all 12 rows, with dotted
+native physical bounds and y-limits extending 500 uV beyond them. If any raw
+matched-sample percentage exceeds 1%, the helper prints the table and then
+fails before creating the figure or writing an aligned EDF.
 
 </details>
 
@@ -571,17 +585,20 @@ compares:
 
 - native HD-EEG `C3:M2`, calculated as `LA2 - RD6` after mean-centering and the
   same high-pass filter, at the original 500 Hz; and
-- the clinical-montage result reconstructed as grounded EDF `C3 - M2`, which
-  cancels the added clinical `M2` and recovers the resampled, zero-padded
-  HD-EEG `C3:M2` at the EDF rate.
+- the clinical-montage result reconstructed as final EDF `C3 - M2`, which
+  recovers the resampled, zero-padded HD-EEG `C3:M2` at the EDF rate under
+  either clinical pathway.
 
 Both use multitaper spectrograms over 0–40 Hz with shared color limits. Before
 each call, the requested 0.05-second step is rounded upward to a whole number
 of samples at that signal's sampling rate.
 
 [`sanity_check_EOG.m`](helper_functions/sanity_check_EOG.m) compares aligned
-`VEOGL:M2` (`VEOGL - RD6`) with the unchanged exported clinical montage rows
-`E2:M1`, `E1:M2`, and `E2:M2` on a shared EDF time axis.
+`VEOGL:M2` (`VEOGL - RD6`) with `E2:M1`, `E1:M2`, and `E2:M2` reconstructed
+from the original clinical EDF `E1`, `E2`, `M1`, and `M2` rows in
+`signalCell_all` on a shared EDF time axis. Stored montage rows are ignored, so
+the figure always compares the aligned HD-EEG signal against direct clinical
+recordings rather than pathway-specific substituted output.
 
 With plotting enabled throughout the current entry point, it opens:
 
@@ -590,15 +607,20 @@ With plotting enabled throughout the current entry point, it opens:
 - the original/aligned/EDF trigger timeline;
 - a clock-drift plot with one trace per segment;
 - per-segment time-trace and Welch-spectrum resampling checks;
-- the eight prepared grounded scalp rows with writer bounds;
+- all 12 final output EDF rows with native writer bounds;
 - native-versus-aligned C3:M2 spectrograms; and
 - aligned-versus-clinical EOG traces.
 
 These figures are saved automatically as step-numbered alignment-check PNGs in
 the subject's `clinical` directory. Figures within the same step include an
 execution-order index so alphabetical sorting preserves their intended order;
-per-segment resampling filenames also include a zero-padded segment number. The
-current filename tails after the common `<subject_code>_alignment_check_` prefix
+per-segment resampling filenames also include a zero-padded segment number.
+The [`save_and_track_alignment_figure.m`](helper_functions/save_and_track_alignment_figure.m)
+helper registers cleanup for the explicit returned figure handles before
+exporting them. Clearing a captured
+`figure_cleanup` therefore closes only those figures, and an export failure
+still closes the tracked set without affecting unrelated figures. The current
+filename tails after the common `<subject_code>_alignment_check_` prefix
 are `step3_clinical_c3_trigger`, `step4_1_trigger_intervals`,
 `step4_2_trigger_alignment`, `step4_3_clock_drift`, `step6_segNN_1_trace`,
 `step6_segNN_2_spectrum`, `step8_scalp_substitution`, `step9_1_spectrogram`, and
@@ -618,7 +640,7 @@ The output name is currently constructed with:
 
 ```matlab
 edfFN = strrep(fn_edf, '.edf', '_aligned.edf');
-blockEdfWrite(edfFN, header_all, signalHeader_final, signalCell_final);
+blockEdfWrite(edfFN, header_all, signalHeader_all, signalCell_final);
 ```
 
 When its output is captured, `align_recordings` returns cleanup guards that keep
@@ -638,15 +660,16 @@ new files.
 - **Time is EDF time.** The output length and sample positions follow the
   clinical 256 Hz scalp clock.
 - **Zero-filled working data outside matched segment bounds mean no trusted
-  aligned HD-EEG is available.** In the written EDF, a prepared grounded scalp
-  row equals its requantized clinical mastoid in these regions. The clinical
-  montage subtracts that same mastoid, so the displayed HD-EEG derivation is
-  zero. Individual samples inside a valid, mean-centered segment can also
-  naturally equal zero.
-- **Twelve direct montage headers use the shared range.** The eight grounded
-  scalp rows are replaced, while clinical `E1`, `E2`, `M1`, and `M2` retain
-  their recorded signals after requantization. Montage-generated rows, other
-  clinical channels, and unrelated metadata are carried through unchanged.
+  aligned HD-EEG is available.** In the normal pathway, a prepared scalp row
+  equals its original clinical mastoid in these regions, so the clinical
+  montage subtraction displays zero. In the faulty pathway, all 12 replacement
+  sources are zero there. Individual samples inside a valid, mean-centered
+  segment can also naturally equal zero.
+- **The 12 direct montage headers remain unchanged.** Eight scalp rows are
+  always replaced. Clinical `E1`, `E2`, `M1`, and `M2` remain original only in
+  the normal pathway and are replaced from aligned HD-EEG sources in the faulty
+  pathway. Montage-generated rows, other clinical channels, and unrelated
+  metadata are carried through unchanged.
 - **Plots are part of the review.** A completed checklist means the code ran to
   the writer; it does not replace visual inspection for incorrect channel
   polarity, clipping, unexpected gaps, or physiologically implausible alignment.
@@ -662,15 +685,15 @@ new files.
 - The top-level function does not stop solely because the matcher reports that
   nonterminal data require re-locking; it can write the earlier trustworthy
   segments and leave later aligned montage derivations at zero, using the
-  clinical mastoid compensation described above in the stored grounded rows.
+  pathway-specific direct rows described above.
   Review the alignment plot and segment table. A terminal region without a
   preceding lock, or with disagreeing trigger correspondence, fails explicitly;
   supported shorter/longer terminal cases still anchor and pad or truncate.
 - HD-EEG and EDF replacement channels are assumed to use compatible physical
-  units. No unit conversion is performed. The 12 direct montage channels use
-  a fixed +/-1800 uV physical range, while their existing common digital limits
-  are retained. The helper reports and plots substituted scalp values outside
-  that range but does not prevent the EDF writer from clipping them.
+  units. No unit conversion is performed. The 12 direct montage channels retain
+  their native shared physical and digital limits. The helper reports all 12
+  channels against those bounds using matched samples only, and the entry point
+  stops before writing if any channel exceeds 1% outside the bounds.
 - Other signal-header fields, including transducer and prefilter descriptions,
   also remain those of the original clinical channels and may not describe the
   substituted HD-EEG source.
@@ -693,8 +716,8 @@ The unit tests use primarily synthetic fixtures and cover canonical-cycle
 inference, guarded EDF partial-cycle starts, final-validation restarts,
 `9001`/`9002` amplifier interruptions, trigger loss, terminal alignment, segment
 construction and linear-drift validation, exact EDF-grid resampling, filter
-response, zero padding, shared-grid quantization, channel substitution, QA
-plots, and PNG export naming.
+response, zero padding and matched-sample masks, faulty-clinical detection,
+both channel-substitution pathways, QA plots, and PNG export naming.
 
 One matcher regression uses the tracked, trigger-event-only fixture
 `tests/sas_023_trigger_event_tables.mat`. Raw subject recordings and subject
@@ -721,7 +744,7 @@ the resulting EDF in the intended clinical viewer before downstream use.
 
 ```text
 align_recordings.m       Main ten-stage orchestration entry point
-helper_functions/        Trigger, segment, resampling, quantization, substitution, and QA helpers
+helper_functions/        Trigger, segment, resampling, detection, substitution, and QA helpers
 tests/                   MATLAB unit tests with primarily synthetic fixtures
 ```
 

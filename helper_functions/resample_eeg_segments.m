@@ -1,6 +1,7 @@
 function [resampled_eeg_segment_data, sanity_figure_handles] = ...
     resample_eeg_segments( ...
-    eeg_segment_data, matched_segments, edf_input, plot_sanity_check)
+    eeg_segment_data, matched_segments, edf_input, ...
+    aligned_eeg_channel_names, plot_sanity_check)
 %RESAMPLE_EEG_SEGMENTS Resample HD-EEG segments onto the EDF scalp clock.
 %   The EDF time axis is the reference. Each segment's effective HD-EEG
 %   sampling rate is calculated from its EEG sample span and its duration
@@ -10,21 +11,21 @@ function [resampled_eeg_segment_data, sanity_figure_handles] = ...
 %   resampler then applies the 120-Hz passband / 128-Hz stopband
 %   antialiasing response while evaluating the signal directly on the
 %   exact EDF scalp sample grid.
-%   RESAMPLE_EEG_SEGMENTS(..., PLOT_SANITY_CHECK) creates a 5-by-2 trace
+%   RESAMPLE_EEG_SEGMENTS(..., ALIGNED_EEG_CHANNEL_NAMES,
+%   PLOT_SANITY_CHECK) creates a 5-by-2 trace
 %   comparison using the middle 30 seconds of the first 10 minutes, plus a
 %   Welch-spectrum figure for each matched segment. These plots include
 %   the eight scalp and two HD-EEG mastoid sources, not auxiliary VEOGL
 %   data. The optional second output contains trace and spectrum figure-handle
 %   vectors indexed by segment.
 
-if nargin < 4
+if nargin < 5
     plot_sanity_check = false;
 end
 
 edf_Fs = edf_input.Fs;
 edf_trigger_Fs = edf_input.trigger_Fs;
-aligned_eeg_channel_names = string( ...
-    edf_input.aligned_eeg_channel_names);
+aligned_eeg_channel_names = string(aligned_eeg_channel_names);
 
 assert(exist('buttord', 'file') == 2 && ...
     exist('butter', 'file') == 2 && ...

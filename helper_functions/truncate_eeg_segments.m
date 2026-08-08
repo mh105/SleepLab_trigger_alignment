@@ -1,16 +1,17 @@
 function eeg_segment_data = truncate_eeg_segments( ...
-    matched_segments, eeg_input)
+    matched_segments, eeg_input, aligned_eeg_channel_names)
 %TRUNCATE_EEG_SEGMENTS Extract ordered HD-EEG channels for each segment.
-%   EEG_SEGMENT_DATA = TRUNCATE_EEG_SEGMENTS(MATCHED_SEGMENTS, EEG_INPUT)
-%   maps EEG_INPUT.ALIGNED_EEG_CHANNEL_NAMES to HD-EEG channel labels and
-%   returns one channels-by-samples array per matched segment.
+%   EEG_SEGMENT_DATA = TRUNCATE_EEG_SEGMENTS(MATCHED_SEGMENTS, EEG_INPUT,
+%   ALIGNED_EEG_CHANNEL_NAMES) maps the requested aligned channel names to
+%   HD-EEG channel labels and returns one channels-by-samples array per
+%   matched segment.
 %
 %   Aligned channel: Fp1 Fp2 F3  F4  C3  C4  O1   O2   M1  M2  VEOGL
 %   HD-EEG channel:  L1  R1  LL2 RR2 LA2 RA2 LL11 RR11 LD6 RD6 VEOGL
 
 aligned_channel_names = {'Fp1', 'Fp2', 'F3',  'F4',  'C3',  'C4',  'O1',   'O2',   'M1',  'M2',  'VEOGL'};
 hd_eeg_channel_names  = {'L1',  'R1',  'LL2', 'RR2', 'LA2', 'RA2', 'LL11', 'RR11', 'LD6', 'RD6', 'VEOGL'};
-requested_channel_names = eeg_input.aligned_eeg_channel_names;
+requested_channel_names = aligned_eeg_channel_names;
 
 [is_supported, mapping_index] = ismember( ...
     requested_channel_names, aligned_channel_names);

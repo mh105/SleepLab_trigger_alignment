@@ -1,8 +1,12 @@
-function final_eeg_data = concatenate_eeg_segments( ...
-    eeg_segment_data, matched_segments, edf_input)
+function [final_eeg_data, matched_edf_sample_mask] = ...
+    concatenate_eeg_segments( ...
+    eeg_segment_data, matched_segments, edf_input, ...
+    aligned_eeg_channel_names)
 %CONCATENATE_EEG_SEGMENTS Place aligned channels on the EDF scalp timeline.
 %   Unmatched samples before, between, and after the segments remain zero,
 %   including auxiliary channels that will not be substituted into the EDF.
+%   MATCHED_EDF_SAMPLE_MASK is a logical row vector that is true for every
+%   inclusive EDF scalp-sample range occupied by a matched segment.
 
 n_segments = height(matched_segments);
 assert(n_segments > 0 && numel(eeg_segment_data) == n_segments, ...
@@ -27,9 +31,10 @@ assert(abs(scalp_samples_per_trigger_sample - ...
 scalp_samples_per_trigger_sample = ...
     round(scalp_samples_per_trigger_sample);
 
-n_channels = numel(edf_input.aligned_eeg_channel_names);
+n_channels = numel(aligned_eeg_channel_names);
 final_eeg_data = zeros( ...
     n_channels, total_sample_count, 'like', eeg_segment_data{1});
+matched_edf_sample_mask = false(1, total_sample_count);
 previous_end_sample = 0;
 
 for segment_i = 1:n_segments
@@ -60,6 +65,7 @@ for segment_i = 1:n_segments
 
     final_eeg_data(:, start_sample:end_sample) = ...
         eeg_segment_data{segment_i};
+    matched_edf_sample_mask(start_sample:end_sample) = true;
     previous_end_sample = end_sample;
 end
 
