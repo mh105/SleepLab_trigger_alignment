@@ -24,6 +24,9 @@ alignment_log_file = fullfile(clinical_directory, [subject_code '_alignment_' ex
 diary(alignment_log_file)
 diary_cleanup = onCleanup(@() diary('off'));
 
+edf_eeg_channel_names = {'Fp1', 'Fp2', 'F3', 'F4', 'C3', 'C4', 'O1', 'O2'};
+aligned_eeg_channel_names = [edf_eeg_channel_names, {'M1', 'M2', 'VEOGL'}];
+
 progress_steps = { ...
     'EDF trigger channel loaded'; ...
     'HD-EEG data loaded'; ...
@@ -83,9 +86,7 @@ figure_cleanup{end + 1} = save_and_track_alignment_figure(sanity_figure_handle, 
 mark_step_done(4);
 
 %% Truncate relevant HD-EEG channels to within segment sample bounds
-edf_eeg_channel_names = {'Fp1', 'Fp2', 'F3', 'F4', 'C3', 'C4', 'O1', 'O2'};
-aligned_eeg_channel_names = [edf_eeg_channel_names, {'M1', 'M2', 'VEOGL'}];
-% Truncate 8 scalp EEG channels as well as analogs for M1 and M2 for re-referencing
+% Cut 8 scalp EEG channels as well as analogs for M1 and M2 for re-referencing
 eeg_segment_data = truncate_eeg_segments(matched_segments, eeg_input, aligned_eeg_channel_names);
 mark_step_done(5);
 
@@ -96,7 +97,7 @@ figure_cleanup{end + 1} = save_and_track_alignment_figure(reshape([resampling_fi
 mark_step_done(6);
 
 %% Concatenate matched segments with zero padding to the same length as the entire EDF length
-% Concatenate segments and output a within-segment mask for faulty clinical signal detection
+% Join resampled segments and output a within-segment mask for faulty clinical signal detection
 [aligned_eeg_data, matched_edf_sample_mask] = concatenate_eeg_segments(resampled_eeg_segment_data, matched_segments, edf_input, aligned_eeg_channel_names, numel(signalCell_all{c3_index}));
 mark_step_done(7);
 
