@@ -1,6 +1,6 @@
 function [ figure_cleanup ] = align_recordings(subject_code, trig_channel)
 %% Sleep and EEG Recording Alignment with Stochastic (all night) Triggers
-% Last edit by Alex He 08/07/2026
+% Last edit by Alex He 08/08/2026
 
 if nargin < 2
     trig_channel = 'TcPPG';
@@ -64,8 +64,9 @@ mark_step_done(2);
 c3_index = strcmp({signalHeader_all.signal_labels}, 'C3');
 edf_Fs = signalHeader_all(c3_index).samples_in_record / header_all.data_record_duration;
 assert(edf_Fs == 256, 'EDF sampling rate is different from 256Hz.')
-sanity_figure_handle = sanity_plot_EDF_data(signalCell_all{c3_index}, signalCell{1}, edf_Fs, trigger_Fs);
-figure_cleanup{end + 1} = save_and_track_alignment_figure(sanity_figure_handle, clinical_directory, subject_code, 3, 'clinical_c3_trigger');
+assert(numel(signalCell{1}) / numel(signalCell_all{c3_index}) == trigger_Fs / edf_Fs, 'Ratio of channel lengths does not match ratio of sampling rates.')
+sanity_figure_handle = sanity_plot_EDF_data(signalHeader_all, signalCell_all, signalCell{1}, edf_Fs, trigger_Fs);
+figure_cleanup{end + 1} = save_and_track_alignment_figure(sanity_figure_handle, clinical_directory, subject_code, 3, 'clinical_trigger_c3_m1_e2');
 mark_step_done(3);
 
 %% Extract triggers from the two files and match by trigger intervals
@@ -86,7 +87,7 @@ figure_cleanup{end + 1} = save_and_track_alignment_figure(sanity_figure_handle, 
 mark_step_done(4);
 
 %% Truncate relevant HD-EEG channels to within segment sample bounds
-% Cut 8 scalp EEG channels as well as analogs for M1 and M2 for re-referencing
+% Segment 8 scalp EEG channels as well as M1 and M2 analogs for re-referencing
 eeg_segment_data = truncate_eeg_segments(matched_segments, eeg_input, aligned_eeg_channel_names);
 mark_step_done(5);
 
@@ -98,7 +99,7 @@ mark_step_done(6);
 
 %% Concatenate matched segments with zero padding to the same length as the entire EDF length
 % Join resampled segments and output a within-segment mask for faulty clinical signal detection
-[aligned_eeg_data, matched_edf_sample_mask] = concatenate_eeg_segments(resampled_eeg_segment_data, matched_segments, edf_input, aligned_eeg_channel_names, numel(signalCell_all{c3_index}));
+[aligned_eeg_data, matched_edf_sample_mask] = concatenate_eeg_segments(resampled_eeg_segment_data, matched_segments, edf_input, aligned_eeg_channel_names);
 mark_step_done(7);
 
 %% Insert the concatenated EEG channel data into EDF file
@@ -113,7 +114,7 @@ sanity_figure_handle = sanity_check_spectrogram(EEG, header_all, signalHeader_al
 figure_cleanup{end + 1} = save_and_track_alignment_figure(sanity_figure_handle, clinical_directory, subject_code, 9, '1_spectrogram');
 
 % 9.2) Compare aligned HD-EEG VEOGL with original clinical EOG signals
-sanity_figure_handle = sanity_check_EOG(aligned_eeg_data, aligned_eeg_channel_names, signalHeader_all, signalCell_all, edf_Fs);
+sanity_figure_handle = sanity_check_eog(aligned_eeg_data, aligned_eeg_channel_names, signalHeader_all, signalCell_all, edf_Fs);
 figure_cleanup{end + 1} = save_and_track_alignment_figure(sanity_figure_handle, clinical_directory, subject_code, 9, '2_eog');
 mark_step_done(9);
 

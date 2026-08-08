@@ -57,7 +57,7 @@ The ten rows below correspond to the progress checklist printed by
 | 6 | Resample the segments | `resample_eeg_segments` | Filtered HD-EEG on the exact EDF sample grid |
 | 7 | Rebuild the full timeline | `concatenate_eeg_segments` | EDF-length array plus a logical mask of matched samples |
 | 8 | Prepare final output channels | `faulty_clinical_detection`, `substitute_eeg_data` | Pathway-specific 12-channel output, bounds report, and trace QA |
-| 9 | Run final sanity checks | `sanity_check_spectrogram`, `sanity_check_EOG` | Spectrogram and EOG comparison figures |
+| 9 | Run final sanity checks | `sanity_check_spectrogram`, `sanity_check_eog` | Spectrogram and EOG comparison figures |
 | 10 | Write the aligned EDF | `blockEdfWrite` | `<clinical-name>_aligned.edf` |
 
 ## Requirements
@@ -224,10 +224,11 @@ edf_Fs = signalHeader_all(c3_index).samples_in_record ...
     / header_all.data_record_duration;
 ```
 
-The implementation asserts `edf_Fs == 256`. The number of samples in this C3
-signal later defines the total length of the aligned EEG matrix. The
+The implementation asserts `edf_Fs == 256`. The trigger-channel sample count
+and the trigger-to-scalp sampling-rate ratio later define the total length of
+the aligned EEG matrix. The
 [`sanity_plot_EDF_data.m`](helper_functions/sanity_plot_EDF_data.m) helper then
-plots the native clinical C3 and trigger signals on their own sampling grids.
+plots the trigger, C3, M1, and E2 signals on four linked native time axes.
 
 </details>
 
@@ -493,9 +494,9 @@ scalp_sample = (trigger_sample - 1) * ratio + 1
 
 The helper requires an integer ratio, chronological non-overlapping segments,
 in-range bounds, and an exact agreement between each resampled segment's length
-and its converted EDF bounds. The full C3 sample count is passed explicitly as
-its final input rather than stored as an ad hoc `edf_input` field. It
-preallocates zeros, so unmatched or unsafe regions are explicit in every
+and its converted EDF bounds. It derives the total scalp sample count from the
+length of `edf_input.DC_trace` and the trigger-to-scalp sampling-rate ratio,
+then preallocates zeros so unmatched or unsafe regions are explicit in every
 aligned channel, including `VEOGL`. Its second output is a logical vector
 marking the same inclusive placement ranges. That single mask defines the
 samples used by both fault detection and bounds QA.
@@ -596,7 +597,7 @@ Both use multitaper spectrograms over 0–40 Hz with shared color limits. Before
 each call, the requested 0.05-second step is rounded upward to a whole number
 of samples at that signal's sampling rate.
 
-[`sanity_check_EOG.m`](helper_functions/sanity_check_EOG.m) compares aligned
+[`sanity_check_eog.m`](helper_functions/sanity_check_eog.m) compares aligned
 `VEOGL:M2` (`VEOGL - RD6`) with `E2:M1`, `E1:M2`, and `E2:M2` reconstructed
 from the original clinical EDF `E1`, `E2`, `M1`, and `M2` rows in
 `signalCell_all` on a shared EDF time axis. Stored montage rows are ignored, so
@@ -606,7 +607,7 @@ recordings rather than pathway-specific substituted output.
 With plotting enabled throughout the current entry point, it opens:
 
 - inter-trigger interval comparisons;
-- the native clinical EDF C3 and trigger channels;
+- the native clinical EDF trigger, C3, M1, and E2 channels;
 - the original/aligned/EDF trigger timeline;
 - a clock-drift plot with one trace per segment;
 - per-segment time-trace and Welch-spectrum resampling checks;
@@ -624,7 +625,7 @@ exporting them. Clearing a captured
 `figure_cleanup` therefore closes only those figures, and an export failure
 still closes the tracked set without affecting unrelated figures. The current
 filename tails after the common `<subject_code>_alignment_check_` prefix
-are `step3_clinical_c3_trigger`, `step4_1_trigger_intervals`,
+are `step3_clinical_trigger_c3_m1_e2`, `step4_1_trigger_intervals`,
 `step4_2_trigger_alignment`, `step4_3_clock_drift`, `step6_segNN_1_trace`,
 `step6_segNN_2_spectrum`, `step8_scalp_substitution`, `step9_1_spectrogram`, and
 `step9_2_eog`, each followed by `.png`.
