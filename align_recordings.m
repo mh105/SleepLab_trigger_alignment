@@ -1,6 +1,6 @@
 function [ figure_cleanup ] = align_recordings(subject_code, trig_channel)
 %% Sleep and EEG Recording Alignment with Stochastic (all night) Triggers
-% Last edit by Alex He 08/08/2026
+% Last edit by Alex He 08/10/2026
 
 if nargin < 2
     trig_channel = 'TcPPG';

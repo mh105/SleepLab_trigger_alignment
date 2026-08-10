@@ -2,7 +2,9 @@ function figure_cleanup = save_and_track_alignment_figure( ...
     figure_handles, clinical_directory, subject_code, step_number, ...
     plot_descriptions)
 %SAVE_AND_TRACK_ALIGNMENT_FIGURE Register cleanup and save figures.
+%   Figures use a common 1600-by-900 pixel canvas before export.
 
+figure_dimensions_pixels = [1600, 900];
 figure_cleanup = onCleanup(@() close_valid_figures(figure_handles));
 plot_descriptions = normalize_plot_descriptions(plot_descriptions);
 if numel(plot_descriptions) ~= numel(figure_handles)
@@ -11,8 +13,13 @@ if numel(plot_descriptions) ~= numel(figure_handles)
 end
 
 for figure_i = 1:numel(figure_handles)
+    figure_handle = figure_handles(figure_i);
+    figure_position = getpixelposition(figure_handle);
+    figure_position(3:4) = figure_dimensions_pixels;
+    setpixelposition(figure_handle, figure_position)
+    drawnow
     save_alignment_check_plot( ...
-        figure_handles(figure_i), clinical_directory, subject_code, ...
+        figure_handle, clinical_directory, subject_code, ...
         step_number, plot_descriptions{figure_i});
 end
 

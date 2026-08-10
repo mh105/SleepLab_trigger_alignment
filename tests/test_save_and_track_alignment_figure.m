@@ -10,10 +10,13 @@ end
 function testSavesExpectedPng(testCase)
 [output_directory, directory_cleanup] = make_temp_directory; %#ok<ASGLU>
 figure_handle = make_hidden_figure(1);
+setpixelposition(figure_handle, [100, 100, 400, 300])
 figure_cleanup = save_and_track_alignment_figure( ...
     figure_handle, output_directory, 'sas_041', 8, ...
     'scalp_substitution');
 verifyClass(testCase, figure_cleanup, 'onCleanup')
+figure_position = getpixelposition(figure_handle);
+verifyEqual(testCase, figure_position(3:4), [1600, 900])
 
 expected_file = fullfile(output_directory, ...
     'sas_041_alignment_check_step8_scalp_substitution.png');
@@ -29,6 +32,8 @@ end
 function testCleanupClosesOnlyTrackedFigures(testCase)
 [output_directory, directory_cleanup] = make_temp_directory; %#ok<ASGLU>
 tracked_figures = [make_hidden_figure(1), make_hidden_figure(2)];
+setpixelposition(tracked_figures(1), [100, 100, 500, 400])
+setpixelposition(tracked_figures(2), [100, 100, 700, 500])
 unrelated_figure = make_hidden_figure(3);
 remaining_figure_cleanup = onCleanup( ...
     @() delete_figures([tracked_figures, unrelated_figure]));
@@ -40,6 +45,10 @@ figure_cleanup = save_and_track_alignment_figure( ...
 verifyClass(testCase, figure_cleanup, 'onCleanup')
 verifyTrue(testCase, all(isgraphics(tracked_figures, 'figure')))
 verifyTrue(testCase, isgraphics(unrelated_figure, 'figure'))
+for figure_i = 1:numel(tracked_figures)
+    figure_position = getpixelposition(tracked_figures(figure_i));
+    verifyEqual(testCase, figure_position(3:4), [1600, 900])
+end
 
 clear figure_cleanup
 
